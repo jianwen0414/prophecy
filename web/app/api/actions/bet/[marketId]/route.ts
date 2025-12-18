@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram } from '@solana/web3.js';
-import * as borsh from 'borsh';
 
 // Solana Actions (Blinks) API endpoint
 // See: https://docs.dialect.to/documentation/actions/actions/building-actions
@@ -59,7 +58,7 @@ export async function GET(
     const connection = new Connection(RPC_URL, 'confirmed');
 
     // Try to fetch market data from chain
-    let marketData = {
+    const marketData = {
         question: `Prediction market: ${marketId}`,
         totalYesStake: 0,
         totalNoStake: 0,
@@ -231,10 +230,11 @@ export async function POST(
 
         return NextResponse.json(response, { headers: corsHeaders });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to build transaction';
         console.error('Error building transaction:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to build transaction' },
+            { error: errorMessage },
             { status: 500, headers: corsHeaders }
         );
     }
