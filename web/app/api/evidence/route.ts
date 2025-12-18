@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
 
         // Read file content
         const fileBuffer = await file.arrayBuffer();
-        const fileBase64 = Buffer.from(fileBuffer).toString('base64');
+        // FileBuffer available for future IPFS upload implementation
+        void fileBuffer;
 
         // In production, this would:
         // 1. Upload to IPFS via nft.storage
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
                     size: file.size,
                 }),
             });
-        } catch (e) {
+        } catch {
             // Agent might not be running - that's okay
             console.log('Agent notification skipped (service may not be running)');
         }
@@ -70,10 +71,11 @@ export async function POST(request: NextRequest) {
             },
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to upload evidence';
         console.error('Evidence upload error:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to upload evidence' },
+            { error: errorMessage },
             { status: 500 }
         );
     }

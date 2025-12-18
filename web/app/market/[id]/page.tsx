@@ -190,9 +190,10 @@ export default function MarketPage({ params }: MarketPageProps) {
             alert('🎉 Success! You now have 100 Cred to stake!');
             setUserVaultBalance(100);
             setNeedsVault(false);
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             console.error('Failed to initialize vault:', err);
-            alert(`Failed to initialize vault: ${err.message}`);
+            alert(`Failed to initialize vault: ${errorMessage}`);
         } finally {
             setInitializingVault(false);
         }
@@ -254,9 +255,10 @@ export default function MarketPage({ params }: MarketPageProps) {
                 } : null);
             }
 
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             console.error('Staking failed:', err);
-            alert(`Staking failed: ${err.message}`);
+            alert(`Staking failed: ${errorMessage}`);
         } finally {
             setStaking(false);
         }

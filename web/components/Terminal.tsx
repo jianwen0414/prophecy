@@ -46,7 +46,7 @@ export default function WarRoom({ agentApiUrl = 'http://localhost:3001', marketI
                         else if (latest.speaker === 'Executor') setActiveNode('executor');
                     }
                 }
-            } catch (e) {
+            } catch {
                 setIsConnected(false);
             }
         };

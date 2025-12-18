@@ -140,8 +140,9 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                         .rpc();
 
                     console.log('✅ Market created on-chain:', signature);
-                } catch (err: any) {
-                    console.warn('On-chain creation failed, using demo mode:', err.message);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                    console.warn('On-chain creation failed, using demo mode:', errorMessage);
                     // Continue with demo mode if on-chain fails
                 }
             } else {
@@ -171,7 +172,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                     }),
                 });
                 console.log('📡 Agent notified about new market');
-            } catch (e) {
+            } catch {
                 console.log('Agent notification skipped (service may not be running)');
             }
 
@@ -185,8 +186,9 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
 
             onMarketCreated?.(marketId, blinkUrl);
 
-        } catch (err: any) {
-            setError(err.message || 'Failed to create market');
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to create market';
+            setError(errorMessage);
         } finally {
             setIsLoading(false);
         }

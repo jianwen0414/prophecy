@@ -76,7 +76,7 @@ export default function InsightPool({ agentApiUrl = 'http://localhost:3001' }: P
                             activeUsers: agentStats.activeUsers || 0,
                         }));
                     }
-                } catch (e) { }
+                } catch { }
 
                 // Fetch markets from agent
                 try {
@@ -85,7 +85,7 @@ export default function InsightPool({ agentApiUrl = 'http://localhost:3001' }: P
                         const data = await marketsRes.json();
                         setMarkets(data.markets || []);
                     }
-                } catch (e) { }
+                } catch { }
 
             } catch (err) {
                 console.log('Could not fetch data:', err);
@@ -127,8 +127,8 @@ export default function InsightPool({ agentApiUrl = 'http://localhost:3001' }: P
                             <h3 className="text-lg font-bold text-white">Platform Stats</h3>
                         </div>
                         <div className={`px-2 py-1 rounded-full text-xs border ${poolInitialized
-                                ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                            : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
                             }`}>
                             {poolInitialized ? '● Live' : '⏳ Initializing'}
                         </div>
