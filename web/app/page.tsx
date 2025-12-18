@@ -14,10 +14,6 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'create' | 'pool' | 'leaderboard'>('create');
 
-  const handleMarketCreated = (_marketId: string, _blinkUrl: string) => {
-    // Market created successfully - could be used for analytics or notifications
-  };
-
   return (
     <>
       {/* Age Gate */}
@@ -81,7 +77,7 @@ export default function Home() {
           >
             {activeTab === 'create' && (
               <div className="space-y-12">
-                <BlinkCreator onMarketCreated={handleMarketCreated} />
+                <BlinkCreator />
 
                 {/* War Room */}
                 <div className="mt-12">

@@ -115,7 +115,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                         });
                         setLoading(false);
                         return;
-                    } catch (err) {
+                    } catch {
                         console.log('Market not found on-chain, showing placeholder');
                     }
                 }
@@ -156,7 +156,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                 const vault = await (program.account as any).reputationVault.fetch(vaultPda);
                 setUserVaultBalance(vault.credBalance.toNumber() / 1_000_000);
                 setNeedsVault(false);
-            } catch (err) {
+            } catch {
                 // Vault doesn't exist yet - user needs to initialize
                 setUserVaultBalance(0);
                 setNeedsVault(true);
