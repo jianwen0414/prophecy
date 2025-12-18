@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, use } from 'react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider } from '@coral-xyz/anchor';
@@ -266,6 +267,7 @@ export default function MarketPage({ params }: MarketPageProps) {
         } finally {
             setStaking(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connected, publicKey, program, marketId, userVaultBalance]);
 
     const handleSubmitEvidence = async () => {
@@ -367,10 +369,10 @@ export default function MarketPage({ params }: MarketPageProps) {
             {/* Navigation */}
             <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-black/50 border-b border-gray-800">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-                    <a href="/" className="flex items-center gap-2">
+                    <Link href="/" className="flex items-center gap-2">
                         <span className="text-2xl">🔮</span>
                         <span className="font-bold text-xl text-white">Prophecy</span>
-                    </a>
+                    </Link>
                     <div className="flex items-center gap-4">
                         {connected && (
                             <>
@@ -396,7 +398,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                                                 if (data.success) {
                                                     setUserVaultBalance(prev => prev + 100);
                                                 }
-                                            } catch (err) {
+                                            } catch {
                                                 alert('Faucet unavailable. Try again later.');
                                             }
                                         }}

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import SponsorDashboard from '@/components/SponsorDashboard';
 import WalletButton from '@/components/WalletButton';
 import { motion } from 'framer-motion';
@@ -16,10 +17,10 @@ export default function SponsorPage() {
             {/* Navigation */}
             <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-black/50 border-b border-gray-800">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-                    <a href="/" className="flex items-center gap-2">
+                    <Link href="/" className="flex items-center gap-2">
                         <span className="text-2xl">🔮</span>
                         <span className="font-bold text-xl text-white">Prophecy</span>
-                    </a>
+                    </Link>
                     <WalletButton />
                 </div>
             </nav>

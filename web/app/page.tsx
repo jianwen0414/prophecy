@@ -13,17 +13,15 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'create' | 'pool' | 'leaderboard'>('create');
-  const [marketCreated, setMarketCreated] = useState<{ id: string; blinkUrl: string } | null>(null);
-  const [ageVerified, setAgeVerified] = useState(false);
 
-  const handleMarketCreated = (marketId: string, blinkUrl: string) => {
-    setMarketCreated({ id: marketId, blinkUrl });
+  const handleMarketCreated = (_marketId: string, _blinkUrl: string) => {
+    // Market created successfully - could be used for analytics or notifications
   };
 
   return (
     <>
       {/* Age Gate */}
-      <AgeGate onVerified={() => setAgeVerified(true)} />
+      <AgeGate onVerified={() => { }} />
 
       <main className="flex min-h-screen flex-col items-center justify-start relative overflow-hidden">
         {/* Animated Background */}
@@ -142,7 +140,7 @@ export default function Home() {
                     🏆 Top Predictors
                   </h2>
                   <p className="text-gray-400">
-                    See who's leading the forecasting game
+                    See who&apos;s leading the forecasting game
                   </p>
                 </div>
                 <Leaderboard />
