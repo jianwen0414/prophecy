@@ -53,9 +53,9 @@ export async function OPTIONS() {
 // GET - Return Action metadata for Blink rendering
 export async function GET(
     request: NextRequest,
-    { params }: { params: { marketId: string } }
+    { params }: { params: Promise<{ marketId: string }> }
 ) {
-    const marketId = params.marketId;
+    const { marketId } = await params;
     const connection = new Connection(RPC_URL, 'confirmed');
 
     // Try to fetch market data from chain
@@ -135,10 +135,10 @@ export async function GET(
 // POST - Build stake_cred transaction for user to sign
 export async function POST(
     request: NextRequest,
-    { params }: { params: { marketId: string } }
+    { params }: { params: Promise<{ marketId: string }> }
 ) {
     try {
-        const marketId = params.marketId;
+        const { marketId } = await params;
         const { searchParams } = new URL(request.url);
         const direction = searchParams.get('direction') || 'yes';
         const amount = parseInt(searchParams.get('amount') || '50');
