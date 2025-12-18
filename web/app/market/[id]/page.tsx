@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, use } from 'react';
 import { motion } from 'framer-motion';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
+import { Program, AnchorProvider } from '@coral-xyz/anchor';
+import type { Wallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import BN from 'bn.js';
 import WarRoom from '@/components/Terminal';
 import ProofNFTModal from '@/components/ProofNFTModal';
@@ -32,7 +33,7 @@ interface MarketData {
 
 export default function MarketPage({ params }: MarketPageProps) {
     // Unwrap async params using React.use()
-    const { id: marketId } = require('react').use(params);
+    const { id: marketId } = use(params);
 
     const { publicKey, connected, wallet } = useWallet();
     const { connection } = useConnection();
@@ -55,7 +56,7 @@ export default function MarketPage({ params }: MarketPageProps) {
             try {
                 const provider = new AnchorProvider(
                     connection,
-                    wallet.adapter as any,
+                    wallet.adapter as Wallet,
                     { commitment: 'confirmed' }
                 );
 
@@ -85,6 +86,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                     );
 
                     try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const marketAccount = await (program.account as any).market.fetch(marketPda);
 
                         const statusMap: Record<string, 'open' | 'resolved' | 'disputed'> = {
@@ -149,6 +151,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                     PROPHECY_PROGRAM_ID
                 );
 
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const vault = await (program.account as any).reputationVault.fetch(vaultPda);
                 setUserVaultBalance(vault.credBalance.toNumber() / 1_000_000);
                 setNeedsVault(false);
@@ -176,6 +179,7 @@ export default function MarketPage({ params }: MarketPageProps) {
                 PROPHECY_PROGRAM_ID
             );
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const tx = await (program.methods as any)
                 .initializeReputationVault()
                 .accounts({

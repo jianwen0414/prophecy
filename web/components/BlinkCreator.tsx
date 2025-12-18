@@ -39,6 +39,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                 // Fetch IDL from the deployed program
                 const provider = new AnchorProvider(
                     connection,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     wallet.adapter as any,
                     { commitment: 'confirmed' }
                 );
