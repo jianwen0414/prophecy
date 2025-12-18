@@ -27,7 +27,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
     const [copied, setCopied] = useState(false);
     const [program, setProgram] = useState<Program | null>(null);
 
-    const { publicKey, signTransaction, connected, wallet } = useWallet();
+    const { publicKey, connected, wallet } = useWallet();
     const { connection } = useConnection();
 
     // Load Anchor program
@@ -193,6 +193,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
         } finally {
             setIsLoading(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tweetUrl, connected, publicKey, program, onMarketCreated]);
 
     // Copy blink URL

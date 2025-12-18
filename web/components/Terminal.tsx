@@ -15,7 +15,7 @@ interface WarRoomProps {
     marketId?: string;
 }
 
-export default function WarRoom({ agentApiUrl = 'http://localhost:3001', marketId }: WarRoomProps) {
+export default function WarRoom({ agentApiUrl = 'http://localhost:3001' }: WarRoomProps) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [theatreMode, setTheatreMode] = useState(false);
@@ -127,7 +127,7 @@ export default function WarRoom({ agentApiUrl = 'http://localhost:3001', marketI
                                 <span className="w-3 h-3 rounded-full bg-gray-500" />
                             </div>
                             <h3 className="text-green-400 uppercase tracking-widest text-xs font-bold">
-                                /// WAR ROOM - AI COUNCIL {isConnected ? 'ACTIVE' : 'OFFLINE'}
+                                {`/// WAR ROOM - AI COUNCIL ${isConnected ? 'ACTIVE' : 'OFFLINE'}`}
                             </h3>
                         </div>
 

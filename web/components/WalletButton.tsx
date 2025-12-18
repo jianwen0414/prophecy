@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 
 export default function WalletButton() {
-    const { connected, publicKey, disconnect } = useWallet();
+    const { connected, publicKey } = useWallet();
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {

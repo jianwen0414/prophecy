@@ -18,7 +18,6 @@ export default function SponsorDashboard() {
         marketDescription: ''
     });
     const [submitted, setSubmitted] = useState(false);
-    const [step, setStep] = useState(1);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });

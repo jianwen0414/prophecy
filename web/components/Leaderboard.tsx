@@ -2,11 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
 
-const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
 
 interface LeaderboardEntry {
     rank: number;
@@ -24,7 +20,6 @@ interface LeaderboardProps {
 }
 
 export default function Leaderboard({ entries: propEntries, userAddress }: LeaderboardProps) {
-    const { connection } = useConnection();
     const [entries, setEntries] = useState<LeaderboardEntry[]>(propEntries || []);
     const [loading, setLoading] = useState(!propEntries);
 
