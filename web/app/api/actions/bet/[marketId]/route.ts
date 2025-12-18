@@ -82,7 +82,7 @@ export async function GET(
     const actionMetadata = {
         type: 'action',
         title: '🔮 Prophecy Prediction Market',
-        icon: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+        icon: 'https://prophecy-two.vercel.app/prophecy-icon.png',
         description: marketData.question,
         label: 'Make Prediction',
         links: {
