@@ -1,0 +1,241 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram } from '@solana/web3.js';
+import * as borsh from 'borsh';
+
+// Solana Actions (Blinks) API endpoint
+// See: https://docs.dialect.to/documentation/actions/actions/building-actions
+
+const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://devnet.helius-rpc.com/?api-key=1036e0d7-e8b6-47e9-a787-394acebc7939';
+
+// PDA Seeds
+const MARKET_SEED = Buffer.from('market');
+const REPUTATION_VAULT_SEED = Buffer.from('reputation_vault');
+const CRED_STAKE_SEED = Buffer.from('cred_stake');
+
+// CORS headers for Blinks
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept-Encoding',
+    'Access-Control-Expose-Headers': 'X-Action-Version, X-Blockchain-Ids',
+    'X-Action-Version': '2.1.3',
+    'X-Blockchain-Ids': 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+};
+
+// Helper to find PDAs
+function findMarketPda(marketId: string): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [MARKET_SEED, Buffer.from(marketId)],
+        PROPHECY_PROGRAM_ID
+    );
+}
+
+function findReputationVaultPda(owner: PublicKey): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [REPUTATION_VAULT_SEED, owner.toBuffer()],
+        PROPHECY_PROGRAM_ID
+    );
+}
+
+function findCredStakePda(marketPda: PublicKey, user: PublicKey): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [CRED_STAKE_SEED, marketPda.toBuffer(), user.toBuffer()],
+        PROPHECY_PROGRAM_ID
+    );
+}
+
+// OPTIONS - CORS preflight
+export async function OPTIONS() {
+    return new NextResponse(null, { headers: corsHeaders });
+}
+
+// GET - Return Action metadata for Blink rendering
+export async function GET(
+    request: NextRequest,
+    { params }: { params: { marketId: string } }
+) {
+    const marketId = params.marketId;
+    const connection = new Connection(RPC_URL, 'confirmed');
+
+    // Try to fetch market data from chain
+    let marketData = {
+        question: `Prediction market: ${marketId}`,
+        totalYesStake: 0,
+        totalNoStake: 0,
+        status: 'open',
+    };
+
+    try {
+        const [marketPda] = findMarketPda(marketId);
+        const accountInfo = await connection.getAccountInfo(marketPda);
+
+        if (accountInfo) {
+            // Parse market data (simplified - in production use Anchor's deserialize)
+            // For now, we'll show basic info
+            marketData.question = `Market ${marketId} - Make your prediction!`;
+            marketData.status = 'open';
+        }
+    } catch (err) {
+        console.log('Could not fetch market data:', err);
+    }
+
+    const actionMetadata = {
+        type: 'action',
+        title: '🔮 Prophecy Prediction Market',
+        icon: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+        description: marketData.question,
+        label: 'Make Prediction',
+        links: {
+            actions: [
+                {
+                    type: 'transaction',
+                    label: `✅ Signal YES (50 Cred)`,
+                    href: `/api/actions/bet/${marketId}?direction=yes&amount=50`,
+                },
+                {
+                    type: 'transaction',
+                    label: `❌ Signal NO (50 Cred)`,
+                    href: `/api/actions/bet/${marketId}?direction=no&amount=50`,
+                },
+                {
+                    type: 'transaction',
+                    label: 'Custom Amount',
+                    href: `/api/actions/bet/${marketId}?direction={direction}&amount={amount}`,
+                    parameters: [
+                        {
+                            name: 'direction',
+                            label: 'Direction',
+                            required: true,
+                            type: 'select',
+                            options: [
+                                { label: 'YES', value: 'yes' },
+                                { label: 'NO', value: 'no' },
+                            ],
+                        },
+                        {
+                            name: 'amount',
+                            label: 'Cred Amount',
+                            required: true,
+                            type: 'number',
+                            min: 10,
+                            max: 1000,
+                        },
+                    ],
+                },
+            ],
+        },
+        disabled: false,
+        error: undefined,
+    };
+
+    return NextResponse.json(actionMetadata, { headers: corsHeaders });
+}
+
+// POST - Build stake_cred transaction for user to sign
+export async function POST(
+    request: NextRequest,
+    { params }: { params: { marketId: string } }
+) {
+    try {
+        const marketId = params.marketId;
+        const { searchParams } = new URL(request.url);
+        const direction = searchParams.get('direction') || 'yes';
+        const amount = parseInt(searchParams.get('amount') || '50');
+
+        // Get user's account from request body
+        const body = await request.json();
+        const userAccount = body.account;
+
+        if (!userAccount) {
+            return NextResponse.json(
+                { error: 'Missing account in request body' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        const userPubkey = new PublicKey(userAccount);
+        const connection = new Connection(RPC_URL, 'confirmed');
+
+        // Find all required PDAs
+        const [marketPda] = findMarketPda(marketId);
+        const [reputationVaultPda] = findReputationVaultPda(userPubkey);
+        const [credStakePda] = findCredStakePda(marketPda, userPubkey);
+
+        // Check if market exists
+        const marketAccount = await connection.getAccountInfo(marketPda);
+        if (!marketAccount) {
+            return NextResponse.json(
+                { error: `Market ${marketId} not found. Create it first.` },
+                { status: 404, headers: corsHeaders }
+            );
+        }
+
+        // Check if user has reputation vault
+        const vaultAccount = await connection.getAccountInfo(reputationVaultPda);
+        if (!vaultAccount) {
+            return NextResponse.json(
+                {
+                    error: 'You need to initialize your reputation vault first. Visit the Prophecy app to get started.',
+                    code: 'VAULT_NOT_INITIALIZED'
+                },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        // Build the stake_cred instruction
+        // Anchor discriminator for stake_cred (first 8 bytes of sha256("global:stake_cred"))
+        const discriminator = Buffer.from([126, 237, 26, 104, 67, 69, 118, 185]); // stake_cred
+
+        // Encode instruction data: discriminator + direction (bool) + amount (u64)
+        const instructionData = Buffer.alloc(8 + 1 + 8);
+        discriminator.copy(instructionData, 0);
+        instructionData.writeUInt8(direction === 'yes' ? 1 : 0, 8);
+        instructionData.writeBigUInt64LE(BigInt(amount * 1_000_000), 9); // Convert to micro-Cred
+
+        // Create the stake_cred instruction
+        const stakeCredInstruction = new TransactionInstruction({
+            programId: PROPHECY_PROGRAM_ID,
+            keys: [
+                { pubkey: marketPda, isSigner: false, isWritable: true },
+                { pubkey: reputationVaultPda, isSigner: false, isWritable: true },
+                { pubkey: credStakePda, isSigner: false, isWritable: true },
+                { pubkey: userPubkey, isSigner: true, isWritable: true },
+                { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            ],
+            data: instructionData,
+        });
+
+        // Build transaction
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+
+        const transaction = new Transaction({
+            blockhash,
+            lastValidBlockHeight,
+            feePayer: userPubkey,
+        });
+
+        transaction.add(stakeCredInstruction);
+
+        // Serialize the transaction
+        const serializedTransaction = transaction.serialize({
+            requireAllSignatures: false,
+            verifySignatures: false,
+        }).toString('base64');
+
+        const response = {
+            type: 'transaction',
+            transaction: serializedTransaction,
+            message: `Staking ${amount} Cred on ${direction.toUpperCase()} for market ${marketId}`,
+        };
+
+        return NextResponse.json(response, { headers: corsHeaders });
+
+    } catch (error: any) {
+        console.error('Error building transaction:', error);
+        return NextResponse.json(
+            { error: error.message || 'Failed to build transaction' },
+            { status: 500, headers: corsHeaders }
+        );
+    }
+}

@@ -1,0 +1,42 @@
+[dotenv@17.2.3] injecting env (1) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+INITIALIZING AGENT WITH MODEL: gemini-2.0-flash
+Starting Prophecy Agent Council...
+--- Researcher Node (Iter: 0) ---
+--- Judge Node (Iter: 0) ---
+Decision UNCERTAIN, retrying research...
+--- Researcher Node (Iter: 1) ---
+Research failed: API Error 429: {
+  "error": {
+    "code": 429,
+    "message": "Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.",
+    "status": "RESOURCE_EXHAUSTED"
+  }
+}
+
+--- Judge Node (Iter: 1) ---
+Judgment failed: API Error 429: {
+  "error": {
+    "code": 429,
+    "message": "Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.",
+    "status": "RESOURCE_EXHAUSTED"
+  }
+}
+
+Decision UNCERTAIN, retrying research...
+--- Researcher Node (Iter: 2) ---
+--- Judge Node (Iter: 2) ---
+Judgment failed: API Error 429: {
+  "error": {
+    "code": 429,
+    "message": "Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.",
+    "status": "RESOURCE_EXHAUSTED"
+  }
+}
+
+--- Executor Node ---
+Market market_123 remains UNRESOLVED.
+Final State Results: {
+  decision: 'UNCERTAIN',
+  reasoning: 'Error in judgment process.',
+  iterations: 3
+}
