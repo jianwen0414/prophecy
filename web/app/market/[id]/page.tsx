@@ -311,25 +311,34 @@ export default function MarketPage({ params }: MarketPageProps) {
 
         try {
             // Call agent to mint NFT
-            const res = await fetch('http://localhost:3001/mint-nft', {
+            const agentUrl = process.env.NEXT_PUBLIC_AGENT_API_URL || 'http://localhost:3001';
+            const res = await fetch(`${agentUrl}/mint-nft`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     marketId: market.id,
                     walletAddress: publicKey.toBase58(),
                     transcriptCid: market.transcriptCid,
+                    question: market.question,
                 }),
             });
 
             const data = await res.json();
             if (data.success) {
-                alert('🎉 NFT Minted! Check your wallet.');
+                // Show success with explorer link
+                const message = `🎉 NFT Minted Successfully!\n\nMint Address: ${data.mintAddress}\n\nView on Solana Explorer:\n${data.explorerUrl}`;
+                alert(message);
+
+                // Open explorer in new tab
+                if (data.explorerUrl) {
+                    window.open(data.explorerUrl, '_blank');
+                }
             } else {
-                alert(`NFT Minting: ${data.message || 'Demo mode - NFT minting not yet deployed'}`);
+                alert(`NFT Minting Failed: ${data.message || 'Unknown error'}`);
             }
         } catch (err) {
             console.error('NFT claim failed:', err);
-            alert('NFT minting is in demo mode. The feature will be available when deployed to mainnet.');
+            alert('Failed to connect to agent. Make sure the agent is running.');
         }
     };
 

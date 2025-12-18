@@ -28,6 +28,7 @@ import {
     createAgent,
     PROPHECY_PROGRAM_ID
 } from './solana.js';
+import { mintProofNFT } from './nft-minter.js';
 import {
     processReconsideration,
     getReconsiderationLogs,
@@ -821,9 +822,9 @@ server.get('/reconsider/logs', (req, res) => {
     res.json(getReconsiderationLogs());
 });
 
-// Mint NFT endpoint
+// Mint NFT endpoint - REAL Metaplex minting
 server.post('/mint-nft', async (req, res) => {
-    const { marketId, walletAddress, transcriptCid } = req.body;
+    const { marketId, walletAddress, transcriptCid, question } = req.body;
 
     if (!marketId || !walletAddress) {
         return res.status(400).json({ error: 'marketId and walletAddress are required' });
@@ -838,16 +839,64 @@ server.post('/mint-nft', async (req, res) => {
         sentiment: 'Positive'
     });
 
-    // In production, this would call the prophecy_nft_minter program
-    // For now, return demo response
-    res.json({
-        success: false,
-        message: 'NFT minting is in demo mode. When deployed to mainnet, this will mint a Proof-Of-Truth NFT to your wallet.',
-        marketId,
-        walletAddress,
-        transcriptCid: transcriptCid || 'mock-cid',
-        mintAddress: null,
-    });
+    try {
+        // Fetch market data to get outcome
+        const marketData = activeMarkets.get(marketId);
+        const outcome = (marketData as any)?.outcome || 'YES';
+        const marketQuestion = question || marketData?.question || `Market ${marketId}`;
+        const cid = transcriptCid || (marketData as any)?.transcriptCid || 'mock-cid';
+
+        // Call the real NFT minter
+        const result = await mintProofNFT(
+            marketId,
+            marketQuestion,
+            outcome as 'YES' | 'NO',
+            cid,
+            walletAddress
+        );
+
+        if (result.success) {
+            addGlobalLog({
+                speaker: 'System',
+                message: `✅ NFT minted successfully! Address: ${result.mintAddress}`,
+                timestamp: Date.now(),
+                sentiment: 'Positive'
+            });
+
+            res.json({
+                success: true,
+                message: 'Proof-Of-Truth NFT minted successfully!',
+                marketId,
+                walletAddress,
+                mintAddress: result.mintAddress,
+                signature: result.signature,
+                metadataUri: result.metadataUri,
+                explorerUrl: result.explorerUrl
+            });
+        } else {
+            addGlobalLog({
+                speaker: 'System',
+                message: `❌ NFT minting failed: ${result.error}`,
+                timestamp: Date.now(),
+                sentiment: 'Negative'
+            });
+
+            res.status(500).json({
+                success: false,
+                message: result.error || 'NFT minting failed',
+                marketId,
+                walletAddress
+            });
+        }
+    } catch (error: any) {
+        console.error('NFT minting error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Unexpected error during NFT minting',
+            marketId,
+            walletAddress
+        });
+    }
 });
 
 // Cred Faucet - Grant 100 Cred to a wallet (for testing)
