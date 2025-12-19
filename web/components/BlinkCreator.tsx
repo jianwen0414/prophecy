@@ -196,7 +196,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tweetUrl, connected, publicKey, program, onMarketCreated]);
 
-    // Copy blink URL
+    // Copy blink URL (raw action URL)
     const handleCopyBlink = useCallback(() => {
         if (createdMarket?.blinkUrl) {
             navigator.clipboard.writeText(createdMarket.blinkUrl);
@@ -205,16 +205,25 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
         }
     }, [createdMarket]);
 
-    // Share on X - shares the Action API URL for Blink unfurling
+    // Copy dial.to URL (for sharing until Dialect approval)
+    const [copiedDialTo, setCopiedDialTo] = useState(false);
+    const handleCopyDialTo = useCallback(() => {
+        if (createdMarket?.dialToUrl) {
+            navigator.clipboard.writeText(createdMarket.dialToUrl);
+            setCopiedDialTo(true);
+            setTimeout(() => setCopiedDialTo(false), 2000);
+        }
+    }, [createdMarket]);
+
+    // Share on X - uses dial.to wrapped URL for Blink unfurling
+    // This ensures the Blink renders even without Dialect registry approval
     const handleShareOnX = useCallback(() => {
         if (createdMarket) {
-            // Use the Action API URL for Blink unfurling on X
-            // This is the URL that enables the interactive Blink preview
             const shareText = encodeURIComponent(
                 `🔮 Make your prediction!\n\n${createdMarket.question}\n\nPowered by @ProphecyDeFAI ⚡`
             );
-            // Share the blinkUrl (Action API) for proper unfurling
-            const shareUrl = encodeURIComponent(createdMarket.blinkUrl);
+            // Share the dial.to URL for proper unfurling without Dialect approval
+            const shareUrl = encodeURIComponent(createdMarket.dialToUrl || createdMarket.blinkUrl);
             window.open(
                 `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`,
                 '_blank'
@@ -355,17 +364,55 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                                     </div>
                                 )}
 
-                                {/* Blink URL */}
-                                <div className="bg-black/50 p-3 rounded-lg flex items-center gap-3 mb-2">
-                                    <code className="text-cyan-400 text-sm flex-1 truncate font-mono">
-                                        {createdMarket.blinkUrl}
-                                    </code>
-                                    <button
-                                        onClick={handleCopyBlink}
-                                        className="text-gray-400 hover:text-white transition-colors px-3 py-1 rounded bg-gray-800 hover:bg-gray-700 text-sm"
-                                    >
-                                        {copied ? '✓ Copied' : 'Copy'}
-                                    </button>
+                                {/* dial.to Shareable URL (Primary) */}
+                                {createdMarket.dialToUrl && (
+                                    <div className="mb-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-xs text-green-400 font-semibold uppercase tracking-wide">
+                                                ✨ Shareable URL (Use this on X!)
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded">
+                                                dial.to
+                                            </span>
+                                        </div>
+                                        <div className="bg-black/50 p-3 rounded-lg flex items-center gap-3 border border-green-500/30">
+                                            <code className="text-green-400 text-sm flex-1 truncate font-mono">
+                                                {createdMarket.dialToUrl}
+                                            </code>
+                                            <button
+                                                onClick={handleCopyDialTo}
+                                                className="text-gray-400 hover:text-white transition-colors px-3 py-1 rounded bg-green-800 hover:bg-green-700 text-sm"
+                                            >
+                                                {copiedDialTo ? '✓ Copied' : 'Copy'}
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            ⚡ This URL will unfurl as an interactive Blink on X/Twitter
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Raw Action URL (Secondary) */}
+                                <div className="mb-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-xs text-gray-400 uppercase tracking-wide">
+                                            Raw Action URL
+                                        </span>
+                                        <span className="px-2 py-0.5 bg-gray-700 text-gray-400 text-xs rounded">
+                                            For Dialect Approval
+                                        </span>
+                                    </div>
+                                    <div className="bg-black/50 p-3 rounded-lg flex items-center gap-3">
+                                        <code className="text-cyan-400 text-sm flex-1 truncate font-mono">
+                                            {createdMarket.blinkUrl}
+                                        </code>
+                                        <button
+                                            onClick={handleCopyBlink}
+                                            className="text-gray-400 hover:text-white transition-colors px-3 py-1 rounded bg-gray-800 hover:bg-gray-700 text-sm"
+                                        >
+                                            {copied ? '✓ Copied' : 'Copy'}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Test Blink Preview */}
@@ -377,11 +424,8 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                                             rel="noopener noreferrer"
                                             className="text-xs text-purple-400 hover:underline flex items-center gap-1"
                                         >
-                                            🧪 Test Blink Preview on dial.to →
+                                            🧪 Preview Blink on dial.to →
                                         </a>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Note: Blinks render in Phantom, Backpack, or when shared on X
-                                        </p>
                                     </div>
                                 )}
 

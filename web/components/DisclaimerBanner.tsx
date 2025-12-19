@@ -82,12 +82,12 @@ export default function DisclaimerBanner() {
                                             </div>
 
                                             <div className="bg-black/30 rounded-lg p-3">
-                                                <div className="text-yellow-400 font-medium mb-1">⚠ Sponsors Only</div>
+                                                <div className="text-purple-400 font-medium mb-1">🤖 AI Council</div>
                                                 <ul className="text-gray-400 text-xs space-y-1">
-                                                    <li>• Sponsors may fund bounties</li>
-                                                    <li>• Requires off-chain KYC</li>
-                                                    <li>• Separate legal framework</li>
-                                                    <li>• Users never deposit funds</li>
+                                                    <li>• Autonomous resolution</li>
+                                                    <li>• Multi-source verification</li>
+                                                    <li>• IPFS transcript storage</li>
+                                                    <li>• Transparent reasoning</li>
                                                 </ul>
                                             </div>
                                         </div>

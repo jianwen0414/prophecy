@@ -77,7 +77,6 @@ pub mod prophecy {
         ctx: Context<InitializeMarket>,
         tweet_url: String,
         market_id: String,
-        sponsor: Option<Pubkey>,
     ) -> Result<()> {
         require!(tweet_url.len() <= MAX_TWEET_URL_LEN, ErrorCode::TweetUrlTooLong);
         require!(market_id.len() <= 32, ErrorCode::MarketIdTooLong);
@@ -91,7 +90,6 @@ pub mod prophecy {
         market.outcome = None;
         market.ipfs_transcript_hash = [0u8; 32];
         market.insight_pool_amount = 0;
-        market.sponsor_pubkey = sponsor;
         market.agent_executor = ctx.accounts.agent_executor.key();
         market.evidence_count = 0;
         market.total_yes_stake = 0;
@@ -315,87 +313,6 @@ pub mod prophecy {
         msg!("Market {} disputed", market.key());
         Ok(())
     }
-
-    // ========================================================================
-    // SPONSOR ESCROW (Mock Implementation)
-    // ========================================================================
-    // NOTE: This is a mock implementation for hackathon demo.
-    // For production, replace with:
-    // 1. Off-chain KYC verification service integration
-    // 2. Proper escrow account with time-locks
-    // 3. Multi-sig release mechanism
-
-    /// Initialize sponsor escrow (mock - stores sponsor deposit)
-    pub fn initialize_sponsor_escrow(
-        ctx: Context<InitializeSponsorEscrow>,
-        bounty_amount: u64,
-    ) -> Result<()> {
-        let escrow = &mut ctx.accounts.sponsor_escrow;
-        escrow.sponsor = ctx.accounts.sponsor.key();
-        escrow.market = ctx.accounts.market.key();
-        escrow.amount = bounty_amount;
-        escrow.is_released = false;
-        escrow.kyc_verified = false; // TODO: Replace with actual KYC check
-        escrow.bump = ctx.bumps.sponsor_escrow;
-
-        // Transfer SOL to escrow (mock - in production use proper escrow)
-        let cpi_context = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            anchor_lang::system_program::Transfer {
-                from: ctx.accounts.sponsor.to_account_info(),
-                to: escrow.to_account_info(),
-            },
-        );
-        anchor_lang::system_program::transfer(cpi_context, bounty_amount)?;
-
-        emit!(SponsorEscrowCreated {
-            escrow: escrow.key(),
-            sponsor: escrow.sponsor,
-            market: escrow.market,
-            amount: bounty_amount,
-            timestamp: Clock::get()?.unix_timestamp,
-        });
-
-        msg!("Sponsor escrow created: {} SOL", bounty_amount);
-        Ok(())
-    }
-
-    /// Release sponsor bounty to winner (mock)
-    /// TODO: In production, this should:
-    /// 1. Verify KYC status via oracle/off-chain
-    /// 2. Use multi-sig for release approval
-    /// 3. Implement proper time-locks
-    pub fn release_sponsor_bounty(ctx: Context<ReleaseSponsorBounty>) -> Result<()> {
-        let escrow = &mut ctx.accounts.sponsor_escrow;
-        let market = &ctx.accounts.market;
-        
-        require!(!escrow.is_released, ErrorCode::AlreadyReleased);
-        require!(market.status == MarketStatus::Resolved, ErrorCode::MarketNotResolved);
-        
-        // Verify the signer is the agent executor authority
-        let executor = &ctx.accounts.agent_executor;
-        require!(
-            ctx.accounts.authority.key() == executor.authority,
-            ErrorCode::UnauthorizedResolver
-        );
-
-        // Transfer from escrow to winner
-        let amount = escrow.amount;
-        **escrow.to_account_info().try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.winner.to_account_info().try_borrow_mut_lamports()? += amount;
-        
-        escrow.is_released = true;
-
-        emit!(SponsorBountyReleased {
-            escrow: escrow.key(),
-            winner: ctx.accounts.winner.key(),
-            amount,
-            timestamp: Clock::get()?.unix_timestamp,
-        });
-
-        msg!("Sponsor bounty released: {} lamports to {}", amount, ctx.accounts.winner.key());
-        Ok(())
-    }
 }
 
 // ============================================================================
@@ -596,51 +513,6 @@ pub struct DisputeMarket<'info> {
     pub disputer: Signer<'info>,
 }
 
-// Sponsor Escrow Accounts (Mock)
-#[derive(Accounts)]
-pub struct InitializeSponsorEscrow<'info> {
-    #[account(
-        init,
-        payer = sponsor,
-        space = 8 + SponsorEscrow::INIT_SPACE,
-        seeds = [b"sponsor_escrow", market.key().as_ref()],
-        bump
-    )]
-    pub sponsor_escrow: Account<'info, SponsorEscrow>,
-    
-    pub market: Account<'info, Market>,
-    
-    #[account(mut)]
-    pub sponsor: Signer<'info>,
-    
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct ReleaseSponsorBounty<'info> {
-    #[account(
-        mut,
-        seeds = [b"sponsor_escrow", market.key().as_ref()],
-        bump = sponsor_escrow.bump
-    )]
-    pub sponsor_escrow: Account<'info, SponsorEscrow>,
-    
-    pub market: Account<'info, Market>,
-    
-    #[account(
-        seeds = [AGENT_EXECUTOR_SEED],
-        bump = agent_executor.bump
-    )]
-    pub agent_executor: Account<'info, AgentExecutor>,
-    
-    /// CHECK: Winner account to receive bounty
-    #[account(mut)]
-    pub winner: AccountInfo<'info>,
-    
-    /// The authority signer (must match agent_executor.authority)
-    pub authority: Signer<'info>,
-}
-
 // ============================================================================
 // STATE ACCOUNTS
 // ============================================================================
@@ -658,7 +530,6 @@ pub struct Market {
     pub outcome: Option<u8>,
     pub ipfs_transcript_hash: [u8; 32],
     pub insight_pool_amount: u64,
-    pub sponsor_pubkey: Option<Pubkey>,
     pub agent_executor: Pubkey,
     pub evidence_count: u8,
     pub total_yes_stake: u64,
@@ -703,17 +574,6 @@ pub struct CredStake {
     pub amount: u64,
     pub direction: bool,
     pub timestamp: i64,
-    pub bump: u8,
-}
-
-#[account]
-#[derive(InitSpace)]
-pub struct SponsorEscrow {
-    pub sponsor: Pubkey,
-    pub market: Pubkey,
-    pub amount: u64,
-    pub is_released: bool,
-    pub kyc_verified: bool,
     pub bump: u8,
 }
 
@@ -809,23 +669,6 @@ pub struct MarketDisputed {
     pub timestamp: i64,
 }
 
-#[event]
-pub struct SponsorEscrowCreated {
-    pub escrow: Pubkey,
-    pub sponsor: Pubkey,
-    pub market: Pubkey,
-    pub amount: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct SponsorBountyReleased {
-    pub escrow: Pubkey,
-    pub winner: Pubkey,
-    pub amount: u64,
-    pub timestamp: i64,
-}
-
 // ============================================================================
 // ERRORS
 // ============================================================================
@@ -870,7 +713,4 @@ pub enum ErrorCode {
     
     #[msg("User did not win this market")]
     UserDidNotWin,
-    
-    #[msg("Bounty has already been released")]
-    AlreadyReleased,
 }

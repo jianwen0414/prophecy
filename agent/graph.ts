@@ -445,7 +445,7 @@ async function executorNode(state: AgentState): Promise<Partial<AgentState>> {
                     sentiment: 'Positive'
                 });
 
-                // Get市场 PDA
+                // Get Market PDA
                 const [marketPda] = PublicKey.findProgramAddressSync(
                     [Buffer.from('market'), Buffer.from(state.marketId)],
                     new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4')

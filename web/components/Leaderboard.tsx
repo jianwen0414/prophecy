@@ -2,7 +2,11 @@
 
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey } from '@solana/web3.js';
 
+const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
+const REPUTATION_VAULT_SEED = Buffer.from('reputation_vault');
 
 interface LeaderboardEntry {
     rank: number;
@@ -20,6 +24,8 @@ interface LeaderboardProps {
 }
 
 export default function Leaderboard({ entries: propEntries, userAddress }: LeaderboardProps) {
+    const { connection } = useConnection();
+    const { publicKey } = useWallet();
     const [entries, setEntries] = useState<LeaderboardEntry[]>(propEntries || []);
     const [loading, setLoading] = useState(!propEntries);
 
@@ -31,38 +37,74 @@ export default function Leaderboard({ entries: propEntries, userAddress }: Leade
             return;
         }
 
-        // Mock data for demo - in production, query ReputationVault accounts
-        const mockEntries: LeaderboardEntry[] = [
-            { rank: 1, address: 'Crypt0...Whale', displayName: 'CryptoWhale', credBalance: 2450, accuracy: 87, predictions: 23, isYou: false },
-            { rank: 2, address: 'DeFi...Master', displayName: 'DeFiMaster', credBalance: 1890, accuracy: 82, predictions: 18, isYou: false },
-            { rank: 3, address: 'Moon...Hunter', displayName: 'MoonHunter', credBalance: 1560, accuracy: 79, predictions: 21, isYou: false },
-            { rank: 4, address: 'Solan...Sage', displayName: 'SolanaSage', credBalance: 1120, accuracy: 75, predictions: 15, isYou: false },
-            { rank: 5, address: 'Proph...Oracle', displayName: 'ProphecyOracle', credBalance: 980, accuracy: 73, predictions: 12, isYou: false },
-            { rank: 6, address: 'Truth...Seeker', displayName: 'TruthSeeker', credBalance: 820, accuracy: 71, predictions: 14, isYou: false },
-            { rank: 7, address: 'Blink...King', displayName: 'BlinkKing', credBalance: 650, accuracy: 68, predictions: 9, isYou: false },
-            { rank: 8, address: 'Future...Seer', displayName: 'FutureSeer', credBalance: 520, accuracy: 65, predictions: 11, isYou: false },
-        ];
-
-        // Mark the user's entry if they're connected
-        if (userAddress) {
-            const userMockEntry = mockEntries.find(e => e.address.includes(userAddress.substring(0, 4)));
-            if (!userMockEntry) {
-                // Add user at bottom
-                mockEntries.push({
-                    rank: 9,
-                    address: userAddress.substring(0, 4) + '...' + userAddress.slice(-4),
-                    displayName: 'You',
-                    credBalance: 100,
-                    accuracy: 0,
-                    predictions: 0,
-                    isYou: true
+        const fetchReputationVaults = async () => {
+            try {
+                // Query all ReputationVault accounts from the program
+                // ReputationVault layout: owner (32) + cred_balance (8) + total_earned (8) +
+                //                        total_staked (8) + participation_count (8) + bump (1)
+                // Total: 8 (discriminator) + 32 + 8 + 8 + 8 + 8 + 1 = 73 bytes
+                const accounts = await connection.getProgramAccounts(PROPHECY_PROGRAM_ID, {
+                    filters: [
+                        { dataSize: 73 }, // ReputationVault size
+                    ],
                 });
-            }
-        }
 
-        setEntries(mockEntries);
-        setLoading(false);
-    }, [propEntries, userAddress]);
+                if (accounts.length === 0) {
+                    setEntries([]);
+                    setLoading(false);
+                    return;
+                }
+
+                // Parse and sort by cred_balance
+                const vaults = accounts.map(({ pubkey, account }) => {
+                    const data = account.data;
+                    // Skip 8-byte discriminator
+                    const owner = new PublicKey(data.slice(8, 40));
+                    const credBalance = Number(data.readBigUInt64LE(40)) / 1_000_000; // Convert from micro-Cred
+                    const totalEarned = Number(data.readBigUInt64LE(48)) / 1_000_000;
+                    const totalStaked = Number(data.readBigUInt64LE(56)) / 1_000_000;
+                    const participationCount = Number(data.readBigUInt64LE(64));
+
+                    // Calculate accuracy as ratio of earned vs staked (simplified metric)
+                    const accuracy = totalStaked > 0
+                        ? Math.min(100, Math.round((totalEarned / totalStaked) * 50))
+                        : 0;
+
+                    return {
+                        pubkey,
+                        owner: owner.toBase58(),
+                        credBalance,
+                        accuracy,
+                        predictions: participationCount,
+                    };
+                });
+
+                // Sort by cred balance (highest first)
+                vaults.sort((a, b) => b.credBalance - a.credBalance);
+
+                // Convert to leaderboard entries
+                const leaderboardEntries: LeaderboardEntry[] = vaults.slice(0, 20).map((vault, index) => ({
+                    rank: index + 1,
+                    address: vault.owner.substring(0, 4) + '...' + vault.owner.slice(-4),
+                    credBalance: vault.credBalance,
+                    accuracy: vault.accuracy,
+                    predictions: vault.predictions,
+                    isYou: publicKey ? vault.owner === publicKey.toBase58() : false,
+                }));
+
+                setEntries(leaderboardEntries);
+            } catch (err) {
+                console.log('Could not fetch reputation vaults:', err);
+                setEntries([]);
+            }
+            setLoading(false);
+        };
+
+        fetchReputationVaults();
+        // Refresh every 60 seconds
+        const interval = setInterval(fetchReputationVaults, 60000);
+        return () => clearInterval(interval);
+    }, [propEntries, userAddress, connection, publicKey]);
 
     const formatNumber = (num: number) => {
         if (num >= 1000000) return `${(num / 1000000).toFixed(2)}M`;

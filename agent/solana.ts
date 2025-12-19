@@ -31,7 +31,6 @@ const AGENT_EXECUTOR_SEED = Buffer.from('agent_executor');
 const REPUTATION_VAULT_SEED = Buffer.from('reputation_vault');
 const CRED_STAKE_SEED = Buffer.from('cred_stake');
 const MARKET_SEED = Buffer.from('market');
-const SPONSOR_ESCROW_SEED = Buffer.from('sponsor_escrow');
 
 // Types
 export interface ResolveMarketParams {
@@ -176,16 +175,6 @@ export class SolanaAgent {
     findCredStakePda(marketPda: PublicKey, user: PublicKey): [PublicKey, number] {
         return PublicKey.findProgramAddressSync(
             [CRED_STAKE_SEED, marketPda.toBuffer(), user.toBuffer()],
-            PROPHECY_PROGRAM_ID
-        );
-    }
-
-    /**
-     * Find SponsorEscrow PDA
-     */
-    findSponsorEscrowPda(marketPda: PublicKey): [PublicKey, number] {
-        return PublicKey.findProgramAddressSync(
-            [SPONSOR_ESCROW_SEED, marketPda.toBuffer()],
             PROPHECY_PROGRAM_ID
         );
     }

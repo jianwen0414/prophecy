@@ -5,7 +5,7 @@ import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgr
 // See: https://docs.dialect.to/documentation/actions/actions/building-actions
 
 const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://devnet.helius-rpc.com/?api-key=1036e0d7-e8b6-47e9-a787-394acebc7939';
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.devnet.solana.com';
 
 // PDA Seeds
 const MARKET_SEED = Buffer.from('market');
