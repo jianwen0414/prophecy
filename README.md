@@ -5,6 +5,10 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-Alpha-orange.svg)
 
+## 🎬 Demo Video
+
+**[Watch the full demonstration →](https://drive.google.com/file/d/1X7IhhYLNLuAvkbxRmvQfT3KRcGMKKuD3/view?usp=sharing)**
+
 ## 🏗️ Architecture
 
 The platform consists of three core pillars:
