@@ -147,7 +147,6 @@ export async function POST(
         const userAccount = body.account;
 
         if (!userAccount) {
-            // ActionError format requires "message" field
             return NextResponse.json(
                 { message: 'Missing account in request body' },
                 { status: 400, headers: corsHeaders }
@@ -157,37 +156,18 @@ export async function POST(
         const userPubkey = new PublicKey(userAccount);
         const connection = new Connection(RPC_URL, 'confirmed');
 
-        // Find all required PDAs
+        // Find all required PDAs (these are deterministic, no RPC needed)
         const [marketPda] = findMarketPda(marketId);
         const [reputationVaultPda] = findReputationVaultPda(userPubkey);
         const [credStakePda] = findCredStakePda(marketPda, userPubkey);
 
-        // Check if market exists on-chain
-        const marketAccount = await connection.getAccountInfo(marketPda);
-        if (!marketAccount) {
-            // Market not found - provide helpful message
-            return NextResponse.json(
-                {
-                    message: `Market "${marketId}" not found on Solana devnet. Please create this market first at prophecy.fun`
-                },
-                { status: 400, headers: corsHeaders }
-            );
-        }
-
-        // Check if user has reputation vault, provide helpful message if not
-        const vaultAccount = await connection.getAccountInfo(reputationVaultPda);
-        if (!vaultAccount) {
-            return NextResponse.json(
-                {
-                    message: 'You need to initialize your Cred wallet first. Visit prophecy.fun and connect your wallet to get started with 100 free Cred!'
-                },
-                { status: 400, headers: corsHeaders }
-            );
-        }
+        // NOTE: We skip on-chain validation here to prevent RPC timeout.
+        // If market or vault doesn't exist, the transaction will fail at signing time
+        // with a clear Solana error message. This is better UX than timing out.
 
         // Build the stake_cred instruction
         // Anchor discriminator for stake_cred (first 8 bytes of sha256("global:stake_cred"))
-        const discriminator = Buffer.from([126, 237, 26, 104, 67, 69, 118, 185]); // stake_cred
+        const discriminator = Buffer.from([126, 237, 26, 104, 67, 69, 118, 185]);
 
         // Encode instruction data: discriminator + direction (bool) + amount (u64)
         const instructionData = Buffer.alloc(8 + 1 + 8);
@@ -208,7 +188,7 @@ export async function POST(
             data: instructionData,
         });
 
-        // Build transaction
+        // Build transaction - only RPC call needed
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
         const transaction = new Transaction({
@@ -225,7 +205,6 @@ export async function POST(
             verifySignatures: false,
         }).toString('base64');
 
-        // Response follows ActionPostResponse spec
         const response = {
             transaction: serializedTransaction,
             message: `Staking ${amount} Cred on ${direction.toUpperCase()} for market ${marketId}`,
@@ -236,10 +215,10 @@ export async function POST(
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to build transaction';
         console.error('Error building transaction:', error);
-        // ActionError format requires "message" field
         return NextResponse.json(
             { message: errorMessage },
             { status: 500, headers: corsHeaders }
         );
     }
 }
+
