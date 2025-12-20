@@ -139,8 +139,23 @@ export async function POST(
     try {
         const { marketId } = await params;
         const { searchParams } = new URL(request.url);
-        const direction = searchParams.get('direction') || 'yes';
-        const amount = parseInt(searchParams.get('amount') || '50');
+        const directionParam = searchParams.get('direction') || 'yes';
+        const amountParam = searchParams.get('amount') || '50';
+
+        // Validate parameters (handle template placeholders from validator)
+        const validDirections = ['yes', 'no'];
+        const direction = validDirections.includes(directionParam.toLowerCase())
+            ? directionParam.toLowerCase()
+            : 'yes';
+
+        // Parse amount, default to 50 if invalid (e.g., "{amount}" from validator)
+        const amount = parseInt(amountParam);
+        if (isNaN(amount) || amount < 10 || amount > 1000) {
+            return NextResponse.json(
+                { message: 'Invalid amount. Please enter a number between 10 and 1000.' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
 
         // Get user's account from request body
         const body = await request.json();
