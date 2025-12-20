@@ -11,7 +11,6 @@ import BN from 'bn.js';
 import ProofNFTModal from '@/components/ProofNFTModal';
 import WalletButton from '@/components/WalletButton';
 import LiveResolutionViewer from '@/components/LiveResolutionViewer';
-import OracleStakeCard from '@/components/OracleStakeCard';
 
 const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
 
@@ -622,24 +621,6 @@ export default function MarketPage({ params }: MarketPageProps) {
                         </button>
                     )}
                 </motion.div>
-
-                {/* Oracle Stakes - Bet on AI accuracy */}
-                {market.status === 'open' && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.12 }}
-                        className="mb-8"
-                    >
-                        <OracleStakeCard
-                            marketId={marketId}
-                            marketPda={PublicKey.findProgramAddressSync(
-                                [Buffer.from('market'), Buffer.from(marketId)],
-                                PROPHECY_PROGRAM_ID
-                            )[0].toBase58()}
-                        />
-                    </motion.div>
-                )}
 
                 {/* Live Resolution Stream */}
                 <motion.div

@@ -37,7 +37,6 @@ Built with **Anchor Framework** for high-speed, low-cost decentralized betting.
 - **Market Creation**: Anyone can initialize a prediction market from a tweet URL.
 - **Cred Staking**: Users stake Cred tokens on "Yes" or "No" outcomes.
 - **Resolution**: Secure instruction for the Agent Council to settle bets.
-- **Oracle Stakes**: Users can bet on the AI Oracle's accuracy (2x reward if correct).
 - **Evidence Submission**: Human-in-the-loop evidence submission to influence AI decisions.
 - **Market Disputes**: Users can dispute resolved markets if they disagree.
 
@@ -53,11 +52,6 @@ Real-time WebSocket streaming for market resolutions.
 - **Scheduled Resolutions**: Set a countdown timer for market resolution.
 - **Live Logs**: Watch AI Council debate in real-time as it happens.
 - **WebSocket Server**: Port 3002 for connecting frontend to agent streams.
-
-### 5. 🎯 Oracle Stakes
-A unique meta-betting layer where users can stake on the AI's prediction accuracy.
-- **2x Rewards**: If the market resolves correctly without dispute, stakers win double.
-- **Risk**: If the market is disputed, stakes are forfeited.
 
 ## 🛠️ Tech Stack
 
