@@ -25,12 +25,15 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.0",
-    "nft.storage": "^7.2.0"
+    "nft.storage": "^7.2.0",
+    "twitter-api-v2": "^1.18.2",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.2",
     "@types/node": "^24.10.1",
+    "@types/ws": "^8.5.13",
     "tsx": "^4.19.4",
     "typescript": "^5.9.3"
   }

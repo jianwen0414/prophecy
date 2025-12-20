@@ -513,4 +513,142 @@ describe("prophecy", () => {
       expect(market.status).to.deep.equal({ disputed: {} });
     });
   });
+
+  describe("Oracle Stakes", () => {
+    const oracleMarketId = "omkt01";
+    let oracleMarketPda;
+    let user1OracleStakePda;
+
+    before(async () => {
+      [oracleMarketPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("market"), Buffer.from(oracleMarketId)],
+        program.programId
+      );
+      [user1OracleStakePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("oracle_stake"), oracleMarketPda.toBuffer(), user1.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Need user1 vault (already exists from previous test)
+      const [user1VaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("reputation_vault"), user1.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Create a new market for oracle stake testing
+      await program.methods
+        .initializeMarket(tweetUrl, oracleMarketId, null)
+        .accounts({
+          market: oracleMarketPda,
+          agentExecutor: agentExecutorPda,
+          creator: marketCreator.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([marketCreator])
+        .rpc();
+    });
+
+    it("Stakes on oracle for a market", async () => {
+      const [user1VaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("reputation_vault"), user1.publicKey.toBuffer()],
+        program.programId
+      );
+
+      const stakeAmount = new anchor.BN(10_000_000); // 10 Cred
+
+      const vaultBefore = await program.account.reputationVault.fetch(user1VaultPda);
+      const balanceBefore = vaultBefore.credBalance.toNumber();
+
+      await program.methods
+        .stakeOnOracle(stakeAmount)
+        .accounts({
+          market: oracleMarketPda,
+          reputationVault: user1VaultPda,
+          oracleStake: user1OracleStakePda,
+          user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([user1])
+        .rpc();
+
+      const vaultAfter = await program.account.reputationVault.fetch(user1VaultPda);
+      expect(vaultAfter.credBalance.toNumber()).to.equal(balanceBefore - 10_000_000);
+
+      const oracleStake = await program.account.oracleStake.fetch(user1OracleStakePda);
+      expect(oracleStake.amount.toNumber()).to.equal(10_000_000);
+      expect(oracleStake.claimed).to.equal(false);
+      expect(oracleStake.user.toBase58()).to.equal(user1.publicKey.toBase58());
+    });
+
+    it("Rejects oracle stake on resolved market", async () => {
+      // Resolve the market first
+      const ipfsHash = new Array(32).fill(99);
+      await program.methods
+        .resolveMarket(1, ipfsHash)
+        .accounts({
+          market: oracleMarketPda,
+          agentExecutor: agentExecutorPda,
+          authority: agentExecutorAuthority.publicKey,
+        })
+        .signers([agentExecutorAuthority])
+        .rpc();
+
+      // Try to stake on resolved market with user2
+      const [user2VaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("reputation_vault"), user2.publicKey.toBuffer()],
+        program.programId
+      );
+      const [user2OracleStakePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("oracle_stake"), oracleMarketPda.toBuffer(), user2.publicKey.toBuffer()],
+        program.programId
+      );
+
+      try {
+        await program.methods
+          .stakeOnOracle(new anchor.BN(10_000_000))
+          .accounts({
+            market: oracleMarketPda,
+            reputationVault: user2VaultPda,
+            oracleStake: user2OracleStakePda,
+            user: user2.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user2])
+          .rpc();
+        expect.fail("Should have thrown an error");
+      } catch (err) {
+        expect(err.message).to.include("MarketNotOpen");
+      }
+    });
+
+    it("Resolves oracle stakes after market resolution", async () => {
+      const [user1VaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("reputation_vault"), user1.publicKey.toBuffer()],
+        program.programId
+      );
+
+      const vaultBefore = await program.account.reputationVault.fetch(user1VaultPda);
+      const balanceBefore = vaultBefore.credBalance.toNumber();
+
+      // Market was resolved without dispute, so oracle staker wins 2x
+      await program.methods
+        .resolveOracleStake(false) // market was NOT disputed
+        .accounts({
+          market: oracleMarketPda,
+          oracleStake: user1OracleStakePda,
+          reputationVault: user1VaultPda,
+          agentExecutor: agentExecutorPda,
+          authority: agentExecutorAuthority.publicKey,
+        })
+        .signers([agentExecutorAuthority])
+        .rpc();
+
+      const vaultAfter = await program.account.reputationVault.fetch(user1VaultPda);
+      // Should have received 2x stake (20 Cred)
+      expect(vaultAfter.credBalance.toNumber()).to.equal(balanceBefore + 20_000_000);
+
+      const oracleStake = await program.account.oracleStake.fetch(user1OracleStakePda);
+      expect(oracleStake.claimed).to.equal(true);
+    });
+  });
 });

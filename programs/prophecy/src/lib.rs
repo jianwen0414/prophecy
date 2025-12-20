@@ -18,6 +18,7 @@ pub const AGENT_EXECUTOR_SEED: &[u8] = b"agent_executor";
 pub const REPUTATION_VAULT_SEED: &[u8] = b"reputation_vault";
 pub const CRED_STAKE_SEED: &[u8] = b"cred_stake";
 pub const MARKET_SEED: &[u8] = b"market";
+pub const ORACLE_STAKE_SEED: &[u8] = b"oracle_stake";
 
 // ============================================================================
 // PROGRAM
@@ -313,6 +314,103 @@ pub mod prophecy {
         msg!("Market {} disputed", market.key());
         Ok(())
     }
+
+    /// Stake Cred on the Oracle's accuracy (betting AI will resolve correctly)
+    pub fn stake_on_oracle(
+        ctx: Context<StakeOnOracle>,
+        amount: u64,
+    ) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        
+        let vault = &mut ctx.accounts.reputation_vault;
+        let market = &ctx.accounts.market;
+        
+        require!(market.status == MarketStatus::Open, ErrorCode::MarketNotOpen);
+        require!(vault.cred_balance >= amount, ErrorCode::InsufficientCred);
+
+        // Deduct from vault
+        vault.cred_balance = vault.cred_balance.checked_sub(amount).ok_or(ErrorCode::Overflow)?;
+        vault.total_staked = vault.total_staked.checked_add(amount).ok_or(ErrorCode::Overflow)?;
+
+        // Create oracle stake record
+        let oracle_stake = &mut ctx.accounts.oracle_stake;
+        oracle_stake.user = ctx.accounts.user.key();
+        oracle_stake.market = market.key();
+        oracle_stake.amount = amount;
+        oracle_stake.timestamp = Clock::get()?.unix_timestamp;
+        oracle_stake.claimed = false;
+        oracle_stake.bump = ctx.bumps.oracle_stake;
+
+        emit!(OracleStaked {
+            market: market.key(),
+            user: oracle_stake.user,
+            amount,
+            timestamp: oracle_stake.timestamp,
+        });
+
+        msg!("Staked {} Cred on Oracle for market {}", amount, market.key());
+        Ok(())
+    }
+
+    /// Resolve Oracle stakes after market is resolved (winners get 2x)
+    pub fn resolve_oracle_stake(
+        ctx: Context<ResolveOracleStake>,
+        market_was_disputed: bool,
+    ) -> Result<()> {
+        let oracle_stake = &mut ctx.accounts.oracle_stake;
+        let market = &ctx.accounts.market;
+        let vault = &mut ctx.accounts.reputation_vault;
+        
+        // Market must be resolved or disputed
+        require!(
+            market.status == MarketStatus::Resolved || market.status == MarketStatus::Disputed,
+            ErrorCode::MarketNotResolved
+        );
+        require!(!oracle_stake.claimed, ErrorCode::OracleStakeAlreadyClaimed);
+        
+        // Verify the signer is the agent executor authority
+        let executor = &ctx.accounts.agent_executor;
+        require!(
+            ctx.accounts.authority.key() == executor.authority,
+            ErrorCode::UnauthorizedResolver
+        );
+
+        oracle_stake.claimed = true;
+        
+        // Oracle stakers win if market was NOT disputed
+        // If disputed, they lose their stake
+        if !market_was_disputed && market.status == MarketStatus::Resolved {
+            // Winner - return 2x stake
+            let reward = oracle_stake.amount.checked_mul(2).ok_or(ErrorCode::Overflow)?;
+            vault.cred_balance = vault.cred_balance.checked_add(reward).ok_or(ErrorCode::Overflow)?;
+            vault.total_earned = vault.total_earned.checked_add(reward).ok_or(ErrorCode::Overflow)?;
+            
+            emit!(OracleStakeResolved {
+                market: market.key(),
+                user: oracle_stake.user,
+                amount: oracle_stake.amount,
+                reward,
+                won: true,
+                timestamp: Clock::get()?.unix_timestamp,
+            });
+            
+            msg!("Oracle stake resolved: {} won {} Cred", oracle_stake.user, reward);
+        } else {
+            // Loser - stake already deducted, just emit event
+            emit!(OracleStakeResolved {
+                market: market.key(),
+                user: oracle_stake.user,
+                amount: oracle_stake.amount,
+                reward: 0,
+                won: false,
+                timestamp: Clock::get()?.unix_timestamp,
+            });
+            
+            msg!("Oracle stake resolved: {} lost {} Cred (market was disputed)", oracle_stake.user, oracle_stake.amount);
+        }
+        
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -513,6 +611,60 @@ pub struct DisputeMarket<'info> {
     pub disputer: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct StakeOnOracle<'info> {
+    pub market: Account<'info, Market>,
+    
+    #[account(
+        mut,
+        seeds = [REPUTATION_VAULT_SEED, user.key().as_ref()],
+        bump = reputation_vault.bump
+    )]
+    pub reputation_vault: Account<'info, ReputationVault>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + OracleStake::INIT_SPACE,
+        seeds = [ORACLE_STAKE_SEED, market.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub oracle_stake: Account<'info, OracleStake>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveOracleStake<'info> {
+    pub market: Account<'info, Market>,
+    
+    #[account(
+        mut,
+        seeds = [ORACLE_STAKE_SEED, market.key().as_ref(), reputation_vault.owner.as_ref()],
+        bump = oracle_stake.bump
+    )]
+    pub oracle_stake: Account<'info, OracleStake>,
+    
+    #[account(
+        mut,
+        seeds = [REPUTATION_VAULT_SEED, reputation_vault.owner.as_ref()],
+        bump = reputation_vault.bump
+    )]
+    pub reputation_vault: Account<'info, ReputationVault>,
+    
+    #[account(
+        seeds = [AGENT_EXECUTOR_SEED],
+        bump = agent_executor.bump
+    )]
+    pub agent_executor: Account<'info, AgentExecutor>,
+    
+    /// The authority signer (must match agent_executor.authority)
+    pub authority: Signer<'info>,
+}
+
 // ============================================================================
 // STATE ACCOUNTS
 // ============================================================================
@@ -574,6 +726,17 @@ pub struct CredStake {
     pub amount: u64,
     pub direction: bool,
     pub timestamp: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct OracleStake {
+    pub user: Pubkey,
+    pub market: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+    pub claimed: bool,
     pub bump: u8,
 }
 
@@ -669,6 +832,24 @@ pub struct MarketDisputed {
     pub timestamp: i64,
 }
 
+#[event]
+pub struct OracleStaked {
+    pub market: Pubkey,
+    pub user: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct OracleStakeResolved {
+    pub market: Pubkey,
+    pub user: Pubkey,
+    pub amount: u64,
+    pub reward: u64,
+    pub won: bool,
+    pub timestamp: i64,
+}
+
 // ============================================================================
 // ERRORS
 // ============================================================================
@@ -713,4 +894,7 @@ pub enum ErrorCode {
     
     #[msg("User did not win this market")]
     UserDidNotWin,
+    
+    #[msg("Oracle stake has already been claimed")]
+    OracleStakeAlreadyClaimed,
 }

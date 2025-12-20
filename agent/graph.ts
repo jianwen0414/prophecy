@@ -13,6 +13,8 @@ import { StateGraph, END } from '@langchain/langgraph';
 import { Connection, PublicKey } from '@solana/web3.js';
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import WebSocket, { WebSocketServer } from 'ws';
 
 import {
     pinTranscript,
@@ -55,6 +57,80 @@ const server = express();
 server.use(cors());
 server.use(express.json());
 
+// Create HTTP server for WebSocket
+const httpServer = createServer(server);
+
+// WebSocket server for live streaming (port 3002)
+const WS_PORT = parseInt(process.env.WS_PORT || '3002');
+const wss = new WebSocketServer({ port: WS_PORT });
+
+// Track WebSocket clients by marketId
+const wsClients = new Map<string, Set<WebSocket>>();
+
+// Scheduled resolutions
+const scheduledResolutions = new Map<string, {
+    marketId: string;
+    scheduledTime: number;
+    question: string;
+    countdown: NodeJS.Timeout | null;
+}>();
+
+// Broadcast to all clients for a specific market
+function broadcastToMarket(marketId: string, data: any) {
+    const clients = wsClients.get(marketId);
+    if (clients) {
+        const message = JSON.stringify(data);
+        clients.forEach(ws => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+            }
+        });
+    }
+}
+
+// Broadcast to all connected clients
+function broadcastToAll(data: any) {
+    const message = JSON.stringify(data);
+    wss.clients.forEach((ws: WebSocket) => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+        }
+    });
+}
+
+// Handle WebSocket connections
+wss.on('connection', (ws: WebSocket, req: { url?: string }) => {
+    const url = new URL(req.url || '/', `http://localhost:${WS_PORT}`);
+    const marketId = url.searchParams.get('marketId') || 'global';
+
+    console.log(`🔌 WebSocket client connected for market: ${marketId}`);
+
+    // Add to market clients
+    if (!wsClients.has(marketId)) {
+        wsClients.set(marketId, new Set());
+    }
+    wsClients.get(marketId)!.add(ws);
+
+    // Send current state
+    const market = activeMarkets.get(marketId);
+    if (market) {
+        ws.send(JSON.stringify({
+            type: 'market_state',
+            marketId,
+            status: market.status,
+            logs: market.logs.slice(-50),
+            scheduledResolution: scheduledResolutions.get(marketId) || null,
+        }));
+    }
+
+    ws.on('close', () => {
+        wsClients.get(marketId)?.delete(ws);
+        console.log(`🔌 WebSocket client disconnected from market: ${marketId}`);
+    });
+});
+
+console.log(`🔌 WebSocket server listening on port ${WS_PORT}`);
+
 // Global log history for War Room
 let logHistory: LogEntry[] = [];
 
@@ -82,10 +158,23 @@ function sleep(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function addGlobalLog(entry: LogEntry) {
+function addGlobalLog(entry: LogEntry, marketId?: string) {
     logHistory.push(entry);
     if (logHistory.length > 200) logHistory.shift();
     console.log(`[${entry.speaker}] ${entry.message}`);
+
+    // Broadcast to WebSocket clients
+    const wsData = { type: 'log', ...entry };
+    if (marketId) {
+        broadcastToMarket(marketId, wsData);
+        // Also add to market-specific logs
+        const market = activeMarkets.get(marketId);
+        if (market) {
+            market.logs.push(entry);
+            if (market.logs.length > 100) market.logs.shift();
+        }
+    }
+    broadcastToMarket('global', wsData);
 }
 
 function cleanJsonString(text: string): string {
@@ -991,8 +1080,280 @@ server.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
         agentPubkey: solanaAgent.getPublicKey().toBase58(),
+        wsPort: WS_PORT,
         timestamp: Date.now()
     });
+});
+
+// Schedule a market resolution with countdown
+server.post('/schedule-resolution/:marketId', async (req, res) => {
+    const { marketId } = req.params;
+    const { delayMinutes = 5 } = req.body;
+
+    if (!marketId) {
+        return res.status(400).json({ error: 'marketId is required' });
+    }
+
+    const scheduledTime = Date.now() + (delayMinutes * 60 * 1000);
+
+    // Cancel any existing scheduled resolution
+    const existing = scheduledResolutions.get(marketId);
+    if (existing?.countdown) {
+        clearTimeout(existing.countdown);
+    }
+
+    // Get market question
+    let question = `Market ${marketId}`;
+    try {
+        const marketAccount = await solanaAgent.fetchMarket(marketId);
+        if (marketAccount) {
+            question = marketAccount.tweetUrl || question;
+        }
+    } catch (err) {
+        console.log('Could not fetch market for question');
+    }
+
+    const market = activeMarkets.get(marketId);
+    if (market) {
+        market.status = 'open';
+    }
+
+    // Start countdown broadcasts
+    const countdownInterval = setInterval(() => {
+        const remaining = Math.max(0, scheduledTime - Date.now());
+        const remainingSeconds = Math.floor(remaining / 1000);
+
+        broadcastToMarket(marketId, {
+            type: 'countdown',
+            marketId,
+            remainingSeconds,
+            scheduledTime,
+        });
+
+        if (remaining <= 0) {
+            clearInterval(countdownInterval);
+        }
+    }, 1000);
+
+    // Schedule the actual resolution
+    const countdown = setTimeout(async () => {
+        clearInterval(countdownInterval);
+        scheduledResolutions.delete(marketId);
+
+        // Broadcast resolution started
+        broadcastToMarket(marketId, {
+            type: 'resolution_started',
+            marketId,
+            timestamp: Date.now(),
+        });
+
+        addGlobalLog({
+            speaker: 'System',
+            message: `⏰ Scheduled resolution triggered for market: ${marketId}`,
+            timestamp: Date.now(),
+            sentiment: 'Positive'
+        }, marketId);
+
+        // Trigger the resolution
+        try {
+            const [pda] = solanaAgent.findMarketPda(marketId);
+            const marketAccount = await solanaAgent.fetchMarket(marketId);
+
+            if (marketAccount) {
+                const result = await agentApp.invoke({
+                    question: marketAccount.tweetUrl || `Market ${marketId}`,
+                    marketId,
+                    marketPda: pda.toBase58(),
+                    iterations: 0,
+                    facts: [],
+                    factConfidences: [],
+                    decision: null,
+                    reasoning: '',
+                    logs: [],
+                    evidenceUrls: [],
+                    ipfsTranscriptCid: '',
+                    transactionSignature: ''
+                });
+
+                // Broadcast resolution complete
+                broadcastToMarket(marketId, {
+                    type: 'resolution_complete',
+                    marketId,
+                    decision: result.decision,
+                    reasoning: result.reasoning,
+                    timestamp: Date.now(),
+                });
+
+                // Resolve oracle stakes if market was resolved successfully
+                if (result.decision === 'YES' || result.decision === 'NO') {
+                    const marketData = activeMarkets.get(marketId);
+                    const wasDisputed = marketData?.status === 'resolved' && false; // Not disputed
+                    await solanaAgent.resolveAllOracleStakes(pda, wasDisputed);
+                }
+            }
+        } catch (err: any) {
+            broadcastToMarket(marketId, {
+                type: 'resolution_error',
+                marketId,
+                error: err.message,
+                timestamp: Date.now(),
+            });
+        }
+    }, delayMinutes * 60 * 1000);
+
+    scheduledResolutions.set(marketId, {
+        marketId,
+        scheduledTime,
+        question,
+        countdown,
+    });
+
+    addGlobalLog({
+        speaker: 'System',
+        message: `⏰ Resolution scheduled for market ${marketId} in ${delayMinutes} minutes`,
+        timestamp: Date.now(),
+        sentiment: 'Positive'
+    }, marketId);
+
+    res.json({
+        success: true,
+        marketId,
+        scheduledTime,
+        delayMinutes,
+        message: `Resolution scheduled for ${new Date(scheduledTime).toISOString()}`
+    });
+});
+
+// Get scheduled resolution info
+server.get('/schedule-resolution/:marketId', (req, res) => {
+    const { marketId } = req.params;
+    const scheduled = scheduledResolutions.get(marketId);
+
+    if (scheduled) {
+        res.json({
+            scheduled: true,
+            marketId,
+            scheduledTime: scheduled.scheduledTime,
+            remainingMs: Math.max(0, scheduled.scheduledTime - Date.now()),
+            question: scheduled.question,
+        });
+    } else {
+        res.json({
+            scheduled: false,
+            marketId,
+        });
+    }
+});
+
+// Cancel scheduled resolution
+server.delete('/schedule-resolution/:marketId', (req, res) => {
+    const { marketId } = req.params;
+    const scheduled = scheduledResolutions.get(marketId);
+
+    if (scheduled?.countdown) {
+        clearTimeout(scheduled.countdown);
+        scheduledResolutions.delete(marketId);
+
+        addGlobalLog({
+            speaker: 'System',
+            message: `⏹️ Scheduled resolution cancelled for market: ${marketId}`,
+            timestamp: Date.now(),
+            sentiment: 'Neutral'
+        }, marketId);
+
+        broadcastToMarket(marketId, {
+            type: 'schedule_cancelled',
+            marketId,
+            timestamp: Date.now(),
+        });
+
+        res.json({ success: true, message: 'Scheduled resolution cancelled' });
+    } else {
+        res.status(404).json({ error: 'No scheduled resolution found for this market' });
+    }
+});
+
+// Quick Market Creation (One-Tap Blink Markets)
+server.post('/quick-market', async (req, res) => {
+    const { tweetUrl } = req.body;
+
+    if (!tweetUrl) {
+        return res.status(400).json({ error: 'tweetUrl is required' });
+    }
+
+    // Validate tweet URL
+    const tweetRegex = /^https?:\/\/(twitter\.com|x\.com)\/\w+\/status\/(\d+)/;
+    const match = tweetUrl.match(tweetRegex);
+
+    if (!match) {
+        return res.status(400).json({ error: 'Invalid tweet URL format' });
+    }
+
+    const tweetId = match[2];
+    const marketId = `tw_${tweetId.slice(-8)}_${Date.now().toString(36).slice(-4)}`;
+
+    // Create market entry
+    activeMarkets.set(marketId, {
+        question: tweetUrl,
+        tweetUrl: tweetUrl,
+        status: 'open',
+        logs: [],
+        createdAt: Date.now(),
+        evidence: [],
+    });
+
+    addGlobalLog({
+        speaker: 'System',
+        message: `⚡ Quick market created: ${marketId}`,
+        timestamp: Date.now(),
+        sentiment: 'Positive'
+    }, marketId);
+
+    // Generate Blink URL
+    const baseUrl = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://prophecy-two.vercel.app';
+    const blinkUrl = `${baseUrl}/api/actions/bet/${marketId}`;
+    const shareableBlinkUrl = `https://dial.to/?action=solana-action:${encodeURIComponent(blinkUrl)}`;
+
+    res.json({
+        success: true,
+        marketId,
+        tweetUrl,
+        blinkUrl,
+        shareableBlinkUrl,
+        message: 'Market created! Share the Blink URL to let others make predictions.',
+        shareLinks: {
+            twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Make a prediction on this! ${shareableBlinkUrl}`)}`,
+            telegram: `https://t.me/share/url?url=${encodeURIComponent(shareableBlinkUrl)}&text=${encodeURIComponent('Make a prediction on this!')}`,
+        }
+    });
+});
+
+// Get Oracle Stakes for a market
+server.get('/oracle-stakes/:marketId', async (req, res) => {
+    const { marketId } = req.params;
+
+    try {
+        const [marketPda] = solanaAgent.findMarketPda(marketId);
+        const stakes = await solanaAgent.getOracleStakesForMarket(marketPda);
+
+        const totalStaked = stakes.reduce((sum, s) => sum + s.amount, 0);
+        const claimedCount = stakes.filter(s => s.claimed).length;
+
+        res.json({
+            marketId,
+            totalStakes: stakes.length,
+            totalStaked: totalStaked / 1_000_000, // Convert to Cred
+            claimedCount,
+            stakes: stakes.map(s => ({
+                user: s.user.toBase58(),
+                amount: s.amount / 1_000_000,
+                timestamp: s.timestamp,
+                claimed: s.claimed,
+            })),
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ============================================================================
@@ -1035,10 +1396,14 @@ async function main() {
     // Start API server
     server.listen(PORT, () => {
         console.log(`🌐 War Room API: http://localhost:${PORT}`);
+        console.log(`🔌 WebSocket Server: ws://localhost:${WS_PORT}`);
         console.log(`   - GET  /logs              - Stream agent logs`);
         console.log(`   - POST /resolve           - Trigger market resolution`);
         console.log(`   - POST /evidence          - Submit evidence`);
         console.log(`   - POST /reconsider        - Request reconsideration`);
+        console.log(`   - POST /quick-market      - One-tap market creation`);
+        console.log(`   - POST /schedule-resolution/:marketId - Schedule resolution`);
+        console.log(`   - GET  /oracle-stakes/:marketId - Get oracle stakes`);
         console.log(`   - GET  /health            - Health check\n`);
     });
 

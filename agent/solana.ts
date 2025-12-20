@@ -31,6 +31,7 @@ const AGENT_EXECUTOR_SEED = Buffer.from('agent_executor');
 const REPUTATION_VAULT_SEED = Buffer.from('reputation_vault');
 const CRED_STAKE_SEED = Buffer.from('cred_stake');
 const MARKET_SEED = Buffer.from('market');
+const ORACLE_STAKE_SEED = Buffer.from('oracle_stake');
 
 // Types
 export interface ResolveMarketParams {
@@ -661,6 +662,132 @@ export class SolanaAgent {
             console.error(`❌ Airdrop failed:`, error.message);
             return false;
         }
+    }
+
+    /**
+     * Find an OracleStake PDA
+     */
+    findOracleStakePda(marketPda: PublicKey, user: PublicKey): [PublicKey, number] {
+        return PublicKey.findProgramAddressSync(
+            [ORACLE_STAKE_SEED, marketPda.toBuffer(), user.toBuffer()],
+            PROPHECY_PROGRAM_ID
+        );
+    }
+
+    /**
+     * Get all OracleStake accounts for a specific market
+     */
+    async getOracleStakesForMarket(marketPda: PublicKey): Promise<Array<{
+        pubkey: PublicKey;
+        user: PublicKey;
+        market: PublicKey;
+        amount: number;
+        timestamp: number;
+        claimed: boolean;
+        bump: number;
+    }>> {
+        try {
+            await this.initProgram();
+
+            console.log(`🔍 Querying OracleStake accounts for market: ${marketPda.toBase58()}`);
+
+            // OracleStake layout: discriminator(8) + user(32) + market(32) + amount(8) + timestamp(8) + claimed(1) + bump(1) = 90
+            const accounts = await this.connection.getProgramAccounts(PROPHECY_PROGRAM_ID, {
+                filters: [
+                    { dataSize: 90 },
+                    {
+                        memcmp: {
+                            offset: 40, // 8 discriminator + 32 user
+                            bytes: marketPda.toBase58(),
+                        },
+                    },
+                ],
+            });
+
+            console.log(`   Found ${accounts.length} oracle stake(s) for market`);
+
+            const stakes = accounts.map(({ pubkey, account }) => {
+                const data = account.data;
+                const user = new PublicKey(data.slice(8, 40));
+                const market = new PublicKey(data.slice(40, 72));
+                const amount = Number(data.readBigUInt64LE(72));
+                const timestamp = Number(data.readBigInt64LE(80));
+                const claimed = data[88] === 1;
+                const bump = data[89];
+
+                return { pubkey, user, market, amount, timestamp, claimed, bump };
+            });
+
+            return stakes;
+        } catch (error: any) {
+            console.error('Failed to get OracleStakes:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Resolve all oracle stakes for a market
+     */
+    async resolveAllOracleStakes(
+        marketPda: PublicKey,
+        marketWasDisputed: boolean
+    ): Promise<{ resolved: number; failed: number; total: number }> {
+        console.log(`🎯 Resolving oracle stakes for market: ${marketPda.toBase58()}`);
+        console.log(`   Market was disputed: ${marketWasDisputed}`);
+
+        const stakes = await this.getOracleStakesForMarket(marketPda);
+        const unclaimedStakes = stakes.filter(s => !s.claimed);
+
+        if (unclaimedStakes.length === 0) {
+            console.log('   No unclaimed oracle stakes found');
+            return { resolved: 0, failed: 0, total: 0 };
+        }
+
+        let resolved = 0;
+        let failed = 0;
+
+        for (const stake of unclaimedStakes) {
+            try {
+                if (!this.program) {
+                    throw new Error('Program not initialized');
+                }
+
+                const [agentExecutorPda] = this.findAgentExecutorPda();
+                const [vaultPda] = this.findReputationVaultPda(stake.user);
+
+                const tx = await (this.program.methods as any)
+                    .resolveOracleStake(marketWasDisputed)
+                    .accounts({
+                        market: marketPda,
+                        oracleStake: stake.pubkey,
+                        reputationVault: vaultPda,
+                        agentExecutor: agentExecutorPda,
+                        authority: this.keypair.publicKey,
+                    })
+                    .signers([this.keypair])
+                    .rpc();
+
+                console.log(`   ✅ Resolved oracle stake for ${stake.user.toBase58()}: ${tx}`);
+                resolved++;
+
+                this.logTransaction('resolve_oracle_stake', {
+                    market: marketPda.toBase58(),
+                    user: stake.user.toBase58(),
+                    amount: stake.amount,
+                    won: !marketWasDisputed,
+                    signature: tx,
+                });
+
+            } catch (error: any) {
+                console.error(`   ❌ Failed to resolve oracle stake for ${stake.user.toBase58()}: ${error.message}`);
+                failed++;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        console.log(`🎯 Oracle stake resolution complete: ${resolved} resolved, ${failed} failed`);
+        return { resolved, failed, total: unclaimedStakes.length };
     }
 }
 
