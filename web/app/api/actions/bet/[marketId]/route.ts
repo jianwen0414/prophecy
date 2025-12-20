@@ -181,8 +181,8 @@ export async function POST(
         // with a clear Solana error message. This is better UX than timing out.
 
         // Build the stake_cred instruction
-        // Anchor discriminator for stake_cred (first 8 bytes of sha256("global:stake_cred"))
-        const discriminator = Buffer.from([126, 237, 26, 104, 67, 69, 118, 185]);
+        // Anchor discriminator = first 8 bytes of sha256("global:stake_cred")
+        const discriminator = Buffer.from([140, 134, 13, 186, 195, 164, 119, 185]);
 
         // Encode instruction data: discriminator + direction (bool) + amount (u64)
         const instructionData = Buffer.alloc(8 + 1 + 8);
