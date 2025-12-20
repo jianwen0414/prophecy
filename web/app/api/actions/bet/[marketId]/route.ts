@@ -147,8 +147,9 @@ export async function POST(
         const userAccount = body.account;
 
         if (!userAccount) {
+            // ActionError format requires "message" field
             return NextResponse.json(
-                { error: 'Missing account in request body' },
+                { message: 'Missing account in request body' },
                 { status: 400, headers: corsHeaders }
             );
         }
@@ -161,22 +162,24 @@ export async function POST(
         const [reputationVaultPda] = findReputationVaultPda(userPubkey);
         const [credStakePda] = findCredStakePda(marketPda, userPubkey);
 
-        // Check if market exists
+        // Check if market exists on-chain
         const marketAccount = await connection.getAccountInfo(marketPda);
         if (!marketAccount) {
+            // Market not found - provide helpful message
             return NextResponse.json(
-                { error: `Market ${marketId} not found. Create it first.` },
-                { status: 404, headers: corsHeaders }
+                {
+                    message: `Market "${marketId}" not found on Solana devnet. Please create this market first at prophecy.fun`
+                },
+                { status: 400, headers: corsHeaders }
             );
         }
 
-        // Check if user has reputation vault
+        // Check if user has reputation vault, provide helpful message if not
         const vaultAccount = await connection.getAccountInfo(reputationVaultPda);
         if (!vaultAccount) {
             return NextResponse.json(
                 {
-                    error: 'You need to initialize your reputation vault first. Visit the Prophecy app to get started.',
-                    code: 'VAULT_NOT_INITIALIZED'
+                    message: 'You need to initialize your Cred wallet first. Visit prophecy.fun and connect your wallet to get started with 100 free Cred!'
                 },
                 { status: 400, headers: corsHeaders }
             );
@@ -222,8 +225,8 @@ export async function POST(
             verifySignatures: false,
         }).toString('base64');
 
+        // Response follows ActionPostResponse spec
         const response = {
-            type: 'transaction',
             transaction: serializedTransaction,
             message: `Staking ${amount} Cred on ${direction.toUpperCase()} for market ${marketId}`,
         };
@@ -233,8 +236,9 @@ export async function POST(
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to build transaction';
         console.error('Error building transaction:', error);
+        // ActionError format requires "message" field
         return NextResponse.json(
-            { error: errorMessage },
+            { message: errorMessage },
             { status: 500, headers: corsHeaders }
         );
     }
