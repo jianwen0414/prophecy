@@ -8,10 +8,10 @@ import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider } from '@coral-xyz/anchor';
 import type { Wallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import BN from 'bn.js';
-import WarRoom from '@/components/Terminal';
 import ProofNFTModal from '@/components/ProofNFTModal';
 import WalletButton from '@/components/WalletButton';
 import LiveResolutionViewer from '@/components/LiveResolutionViewer';
+import OracleStakeCard from '@/components/OracleStakeCard';
 
 const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
 
@@ -623,6 +623,24 @@ export default function MarketPage({ params }: MarketPageProps) {
                     )}
                 </motion.div>
 
+                {/* Oracle Stakes - Bet on AI accuracy */}
+                {market.status === 'open' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.12 }}
+                        className="mb-8"
+                    >
+                        <OracleStakeCard
+                            marketId={marketId}
+                            marketPda={PublicKey.findProgramAddressSync(
+                                [Buffer.from('market'), Buffer.from(marketId)],
+                                PROPHECY_PROGRAM_ID
+                            )[0].toBase58()}
+                        />
+                    </motion.div>
+                )}
+
                 {/* Live Resolution Stream */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -634,18 +652,6 @@ export default function MarketPage({ params }: MarketPageProps) {
                         📡 Live Resolution Stream
                     </h2>
                     <LiveResolutionViewer marketId={marketId} />
-                </motion.div>
-
-                {/* War Room */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                >
-                    <h2 className="text-lg font-bold text-white mb-4 text-center">
-                        🎭 Live War Room
-                    </h2>
-                    <WarRoom marketId={marketId} />
                 </motion.div>
             </div>
 

@@ -26,6 +26,7 @@ export default function LiveResolutionViewer({
     } = useResolutionStream({ marketId, wsUrl, agentUrl: agentApiUrl });
 
     const [scheduleMinutes, setScheduleMinutes] = useState(1);
+    const [copied, setCopied] = useState(false);
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to latest log
@@ -77,6 +78,24 @@ export default function LiveResolutionViewer({
         ? `${window.location.origin}/market/${marketId}`
         : '';
 
+    const handleShare = async () => {
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // Fallback for browsers without clipboard API
+            const textArea = document.createElement('textarea');
+            textArea.value = shareUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
     return (
         <div className="glass-panel rounded-xl border border-cyan-500/30 overflow-hidden">
             {/* Header */}
@@ -98,10 +117,13 @@ export default function LiveResolutionViewer({
 
                     {/* Share button */}
                     <button
-                        onClick={() => navigator.clipboard.writeText(shareUrl)}
-                        className="px-3 py-1 bg-cyan-500/20 rounded-lg text-cyan-400 text-sm hover:bg-cyan-500/30 transition-colors"
+                        onClick={handleShare}
+                        className={`px-3 py-1 rounded-lg text-sm transition-colors ${copied
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
+                            }`}
                     >
-                        📤 Share Stream
+                        {copied ? '✓ Copied!' : '📤 Share Stream'}
                     </button>
                 </div>
             </div>

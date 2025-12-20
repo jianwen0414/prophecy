@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider } from '@coral-xyz/anchor';
+import Link from 'next/link';
 
 // Program IDs
 const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
@@ -440,6 +441,12 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                                         </svg>
                                         Share on X
                                     </button>
+                                    <Link
+                                        href={`/market/${createdMarket.marketId}`}
+                                        className="flex-1 bg-gradient-to-r from-cyan-500 to-green-500 text-white font-semibold py-3 px-4 rounded-lg hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                                    >
+                                        🔮 View Market
+                                    </Link>
                                     <button
                                         onClick={handleReset}
                                         className="px-6 py-3 border border-gray-700 text-gray-300 font-semibold rounded-lg hover:bg-gray-800 transition-colors"
