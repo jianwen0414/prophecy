@@ -163,6 +163,30 @@ export function useResolutionStream({
         }
     }, [agentUrl, marketId]);
 
+    // Trigger resolution immediately
+    const triggerNow = useCallback(async () => {
+        try {
+            setStatus('streaming');
+            const response = await fetch(`${agentUrl}/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ marketId }),
+            });
+
+            const data = await response.json();
+            if (data.decision) {
+                setDecision(data.decision);
+                setReasoning(data.reasoning);
+                setStatus('complete');
+            }
+            return data;
+        } catch (err) {
+            console.error('Failed to trigger resolution:', err);
+            setStatus('error');
+            return { success: false, error: err };
+        }
+    }, [agentUrl, marketId]);
+
     useEffect(() => {
         connect();
         return () => disconnect();
@@ -179,5 +203,6 @@ export function useResolutionStream({
         disconnect,
         scheduleResolution,
         cancelSchedule,
+        triggerNow,
     };
 }

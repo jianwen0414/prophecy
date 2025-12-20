@@ -132,7 +132,7 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
 
                     // Call initialize_market instruction
                     signature = await program.methods
-                        .initializeMarket(tweetUrl, marketId, null)
+                        .initializeMarket(tweetUrl, marketId)
                         .accounts({
                             market: marketPda,
                             agentExecutor: agentExecutorPda,
@@ -144,13 +144,24 @@ export default function BlinkCreator({ onMarketCreated }: BlinkCreatorProps) {
                     console.log('✅ Market created on-chain:', signature);
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-                    console.warn('On-chain creation failed, using demo mode:', errorMessage);
-                    // Continue with demo mode if on-chain fails
+                    console.error('❌ On-chain creation failed:', errorMessage);
+
+                    // Show specific error messages for common issues
+                    if (errorMessage.includes('insufficient funds')) {
+                        setError('Insufficient SOL for transaction. Please fund your wallet.');
+                    } else if (errorMessage.includes('User rejected')) {
+                        setError('Transaction was rejected. Please approve in your wallet.');
+                    } else {
+                        setError(`On-chain creation failed: ${errorMessage.substring(0, 100)}`);
+                    }
+                    setIsLoading(false);
+                    return; // Don't continue with demo mode
                 }
             } else {
-                // Demo mode - simulate creation
-                console.log('📍 Demo mode: simulating market creation');
+                // Demo mode only when program isn't loaded
+                console.log('📍 Demo mode: Program not loaded, simulating market creation');
                 await new Promise(resolve => setTimeout(resolve, 1500));
+                // Note: This market won't be resolvable on-chain
             }
 
             // Generate Blink URLs

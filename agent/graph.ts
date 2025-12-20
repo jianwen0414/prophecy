@@ -36,6 +36,7 @@ import {
     getReconsiderationLogs,
     type ReconsiderationRequest
 } from './reconsideration.js';
+import { fetchTweetContent } from './twitter-bot.js';
 
 // ============================================================================
 // CONFIGURATION
@@ -158,17 +159,27 @@ function sleep(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Track current market being resolved for automatic log broadcasting
+let currentResolvingMarketId: string | null = null;
+
+function setCurrentMarket(marketId: string | null) {
+    currentResolvingMarketId = marketId;
+}
+
 function addGlobalLog(entry: LogEntry, marketId?: string) {
     logHistory.push(entry);
     if (logHistory.length > 200) logHistory.shift();
     console.log(`[${entry.speaker}] ${entry.message}`);
 
+    // Use provided marketId, or fall back to current resolving market
+    const targetMarketId = marketId || currentResolvingMarketId;
+
     // Broadcast to WebSocket clients
     const wsData = { type: 'log', ...entry };
-    if (marketId) {
-        broadcastToMarket(marketId, wsData);
+    if (targetMarketId) {
+        broadcastToMarket(targetMarketId, wsData);
         // Also add to market-specific logs
-        const market = activeMarkets.get(marketId);
+        const market = activeMarkets.get(targetMarketId);
         if (market) {
             market.logs.push(entry);
             if (market.logs.length > 100) market.logs.shift();
@@ -261,6 +272,38 @@ async function researcherNode(state: AgentState): Promise<Partial<AgentState>> {
     };
     addGlobalLog(log);
 
+    // Try to fetch actual tweet content if the question contains a tweet URL
+    let tweetContent = '';
+    let tweetAuthor = '';
+    const tweetUrlMatch = state.question.match(/https?:\/\/(twitter\.com|x\.com)\/\w+\/status\/\d+/);
+    if (tweetUrlMatch) {
+        addGlobalLog({
+            speaker: 'Researcher',
+            message: `🐦 Fetching tweet content from Twitter API...`,
+            timestamp: Date.now(),
+            sentiment: 'Neutral'
+        });
+
+        const tweetData = await fetchTweetContent(tweetUrlMatch[0]);
+        if (tweetData.success && tweetData.text) {
+            tweetContent = tweetData.text;
+            tweetAuthor = tweetData.author || 'Unknown';
+            addGlobalLog({
+                speaker: 'Researcher',
+                message: `✅ Tweet content fetched: "${tweetContent.substring(0, 100)}..."`,
+                timestamp: Date.now(),
+                sentiment: 'Positive'
+            });
+        } else {
+            addGlobalLog({
+                speaker: 'Researcher',
+                message: `⚠️ Could not fetch tweet: ${tweetData.error}. Using URL context only.`,
+                timestamp: Date.now(),
+                sentiment: 'Negative'
+            });
+        }
+    }
+
     // Note evidence if provided
     if (state.evidenceUrls?.length > 0) {
         addGlobalLog({
@@ -275,10 +318,21 @@ async function researcherNode(state: AgentState): Promise<Partial<AgentState>> {
         ? `USER EVIDENCE SUBMITTED: ${state.evidenceUrls.join(', ')}. Analyze these sources specifically.`
         : '';
 
+    // Build tweet context if we have content
+    const tweetContext = tweetContent
+        ? `
+    ACTUAL TWEET CONTENT (fetched from Twitter):
+    Author: ${tweetAuthor}
+    Text: "${tweetContent}"
+    
+    IMPORTANT: Base your analysis on the ACTUAL tweet content above, not assumptions.`
+        : '';
+
     const prompt = `
     You are a research agent investigating a prediction market question.
     
     Question: "${state.question}"
+    ${tweetContext}
     ${evidenceContext}
     
     Your task:
@@ -295,6 +349,7 @@ async function researcherNode(state: AgentState): Promise<Partial<AgentState>> {
     }
     
     Focus on:
+    - The actual content of the tweet
     - Official announcements
     - Verified news sources
     - Data from authoritative organizations
@@ -756,6 +811,9 @@ server.post('/resolve', async (req, res) => {
 
     // Run the agent pipeline
     try {
+        // Set current market for automatic log broadcasting
+        setCurrentMarket(marketId);
+
         const result = await agentApp.invoke({
             question,
             marketId,
@@ -771,6 +829,9 @@ server.post('/resolve', async (req, res) => {
             transactionSignature: ''
         });
 
+        // Clear current market after resolution
+        setCurrentMarket(null);
+
         res.json({
             success: true,
             marketId,
@@ -780,8 +841,10 @@ server.post('/resolve', async (req, res) => {
             ipfsTranscriptCid: result.ipfsTranscriptCid,
             transactionSignature: result.transactionSignature
         });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        setCurrentMarket(null);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        res.status(500).json({ error: errorMessage });
     }
 });
 
@@ -1157,7 +1220,31 @@ server.post('/schedule-resolution/:marketId', async (req, res) => {
         // Trigger the resolution
         try {
             const [pda] = solanaAgent.findMarketPda(marketId);
-            const marketAccount = await solanaAgent.fetchMarket(marketId);
+            let marketAccount;
+
+            try {
+                marketAccount = await solanaAgent.fetchMarket(marketId);
+            } catch (fetchErr: unknown) {
+                const fetchErrMsg = fetchErr instanceof Error ? fetchErr.message : 'Unknown error';
+                console.warn(`⚠️ Market ${marketId} not found on-chain: ${fetchErrMsg}`);
+
+                // Broadcast error to clients
+                broadcastToMarket(marketId, {
+                    type: 'resolution_error',
+                    marketId,
+                    error: `Market not found on-chain. Please ensure the market was created with wallet connected.`,
+                    timestamp: Date.now(),
+                });
+
+                addGlobalLog({
+                    speaker: 'System',
+                    message: `❌ Resolution failed: Market ${marketId} not found on-chain`,
+                    timestamp: Date.now(),
+                    sentiment: 'Negative'
+                }, marketId);
+
+                return;
+            }
 
             if (marketAccount) {
                 const result = await agentApp.invoke({
@@ -1183,13 +1270,14 @@ server.post('/schedule-resolution/:marketId', async (req, res) => {
                     reasoning: result.reasoning,
                     timestamp: Date.now(),
                 });
-
-                // Resolve oracle stakes if market was resolved successfully
-                if (result.decision === 'YES' || result.decision === 'NO') {
-                    const marketData = activeMarkets.get(marketId);
-                    const wasDisputed = marketData?.status === 'resolved' && false; // Not disputed
-                    await solanaAgent.resolveAllOracleStakes(pda, wasDisputed);
-                }
+            } else {
+                // No market account found
+                broadcastToMarket(marketId, {
+                    type: 'resolution_error',
+                    marketId,
+                    error: `Market ${marketId} does not exist on-chain.`,
+                    timestamp: Date.now(),
+                });
             }
         } catch (err: any) {
             broadcastToMarket(marketId, {

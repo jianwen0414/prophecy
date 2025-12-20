@@ -7,12 +7,14 @@
 
 import { TwitterApi } from 'twitter-api-v2';
 
-// Twitter API credentials from environment
-const TWITTER_BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || '';
-const TWITTER_API_KEY = process.env.TWITTER_API_KEY || '';
-const TWITTER_API_SECRET = process.env.TWITTER_API_SECRET || '';
-const TWITTER_ACCESS_TOKEN = process.env.TWITTER_ACCESS_TOKEN || '';
-const TWITTER_ACCESS_SECRET = process.env.TWITTER_ACCESS_SECRET || '';
+// Credentials are read lazily to ensure dotenv has loaded
+const getTwitterCredentials = () => ({
+    TWITTER_BEARER_TOKEN: process.env.TWITTER_BEARER_TOKEN || '',
+    TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
+    TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
+    TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
+    TWITTER_ACCESS_SECRET: process.env.TWITTER_ACCESS_SECRET || '',
+});
 
 const BASE_URL = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://prophecy-two.vercel.app';
 
@@ -39,16 +41,22 @@ export class ProphecyTwitterBot {
     private lastMentionId: string | null = null;
     private checkInterval: NodeJS.Timeout | null = null;
     private createMarketFn: ((tweetUrl: string) => Promise<CreateMarketResult>) | null = null;
+    private initialized = false;
 
     constructor() {
-        this.initialize();
+        // Don't initialize in constructor - wait for first use
     }
 
     /**
-     * Initialize Twitter API client
+     * Initialize Twitter API client (called lazily on first use)
      */
-    private initialize() {
-        if (!TWITTER_API_KEY || !TWITTER_API_SECRET) {
+    private ensureInitialized() {
+        if (this.initialized) return;
+        this.initialized = true;
+
+        const creds = getTwitterCredentials();
+
+        if (!creds.TWITTER_API_KEY || !creds.TWITTER_API_SECRET) {
             console.warn('⚠️ Twitter API credentials not configured. Bot will not start.');
             console.warn('   Set TWITTER_API_KEY and TWITTER_API_SECRET in .env');
             return;
@@ -56,15 +64,16 @@ export class ProphecyTwitterBot {
 
         try {
             this.client = new TwitterApi({
-                appKey: TWITTER_API_KEY,
-                appSecret: TWITTER_API_SECRET,
-                accessToken: TWITTER_ACCESS_TOKEN || undefined,
-                accessSecret: TWITTER_ACCESS_SECRET || undefined,
+                appKey: creds.TWITTER_API_KEY,
+                appSecret: creds.TWITTER_API_SECRET,
+                accessToken: creds.TWITTER_ACCESS_TOKEN || undefined,
+                accessSecret: creds.TWITTER_ACCESS_SECRET || undefined,
             });
 
             console.log('🐦 Twitter bot initialized');
-        } catch (err: any) {
-            console.error('Failed to initialize Twitter client:', err.message);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            console.error('Failed to initialize Twitter client:', errorMessage);
         }
     }
 
@@ -79,6 +88,8 @@ export class ProphecyTwitterBot {
      * Start listening for mentions
      */
     async startListening() {
+        this.ensureInitialized();
+
         if (!this.client) {
             console.warn('🐦 Twitter bot not initialized - skipping mention listener');
             return;
@@ -255,6 +266,51 @@ export class ProphecyTwitterBot {
     isConfigured(): boolean {
         return this.client !== null;
     }
+
+    /**
+     * Fetch tweet content from a tweet URL
+     * Returns the actual text of the tweet
+     */
+    async fetchTweetContent(tweetUrl: string): Promise<{ success: boolean; text?: string; author?: string; error?: string }> {
+        this.ensureInitialized();
+
+        if (!this.client) {
+            return { success: false, error: 'Twitter API not configured' };
+        }
+
+        // Extract tweet ID from URL
+        const match = tweetUrl.match(/^https?:\/\/(twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/);
+        if (!match) {
+            return { success: false, error: 'Invalid tweet URL format' };
+        }
+
+        const tweetId = match[3];
+
+        try {
+            const tweet = await this.client.v2.singleTweet(tweetId, {
+                'tweet.fields': ['text', 'created_at', 'public_metrics'],
+                expansions: ['author_id'],
+                'user.fields': ['username', 'name'],
+            });
+
+            if (!tweet.data) {
+                return { success: false, error: 'Tweet not found' };
+            }
+
+            const authorInfo = tweet.includes?.users?.[0];
+            const author = authorInfo ? `@${authorInfo.username} (${authorInfo.name})` : 'Unknown';
+
+            return {
+                success: true,
+                text: tweet.data.text,
+                author,
+            };
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            console.error('Failed to fetch tweet:', errorMessage);
+            return { success: false, error: errorMessage };
+        }
+    }
 }
 
 // Export singleton instance
@@ -264,4 +320,9 @@ export const twitterBot = new ProphecyTwitterBot();
 export function startTwitterBot(createMarketFn: (tweetUrl: string) => Promise<CreateMarketResult>) {
     twitterBot.setMarketCreator(createMarketFn);
     twitterBot.startListening();
+}
+
+// Export function to fetch tweet content
+export async function fetchTweetContent(tweetUrl: string) {
+    return twitterBot.fetchTweetContent(tweetUrl);
 }

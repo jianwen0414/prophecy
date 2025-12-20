@@ -23,9 +23,11 @@ export default function LiveResolutionViewer({
         reasoning,
         scheduleResolution,
         cancelSchedule,
+        triggerNow,
     } = useResolutionStream({ marketId, wsUrl, agentUrl: agentApiUrl });
 
     const [scheduleMinutes, setScheduleMinutes] = useState(1);
+    const [resolving, setResolving] = useState(false);
     const [copied, setCopied] = useState(false);
     const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -202,6 +204,17 @@ export default function LiveResolutionViewer({
                         className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-lg text-white font-medium hover:from-cyan-400 hover:to-purple-400 transition-colors"
                     >
                         ⏰ Schedule
+                    </button>
+                    <button
+                        onClick={async () => {
+                            setResolving(true);
+                            await triggerNow();
+                            setResolving(false);
+                        }}
+                        disabled={resolving || status === 'streaming'}
+                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-cyan-500 rounded-lg text-white font-medium hover:from-green-400 hover:to-cyan-400 transition-colors disabled:opacity-50"
+                    >
+                        {resolving ? '⏳ Resolving...' : '⚡ Resolve Now'}
                     </button>
                 </div>
             )}
