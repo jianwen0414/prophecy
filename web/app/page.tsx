@@ -10,7 +10,6 @@ import InsightPool from '@/components/InsightPool';
 import Leaderboard from '@/components/Leaderboard';
 import AgeGate from '@/components/AgeGate';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
-import QuickMarketCreator from '@/components/QuickMarketCreator';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'create' | 'pool' | 'leaderboard'>('create');
@@ -78,10 +77,6 @@ export default function Home() {
           >
             {activeTab === 'create' && (
               <div className="space-y-12">
-                {/* Quick Market Creator - One-Tap Feature */}
-                <QuickMarketCreator />
-
-                {/* Original Blink Creator */}
                 <BlinkCreator />
 
                 {/* War Room */}

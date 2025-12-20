@@ -11,6 +11,7 @@ import BN from 'bn.js';
 import WarRoom from '@/components/Terminal';
 import ProofNFTModal from '@/components/ProofNFTModal';
 import WalletButton from '@/components/WalletButton';
+import LiveResolutionViewer from '@/components/LiveResolutionViewer';
 
 const PROPHECY_PROGRAM_ID = new PublicKey('UJW3ZdLcVxYuYDRpy6suu2DHCQhkUgCGKPUaDqdzSs4');
 
@@ -620,6 +621,19 @@ export default function MarketPage({ params }: MarketPageProps) {
                             {submittingEvidence ? 'Uploading to IPFS...' : 'Submit Evidence'}
                         </button>
                     )}
+                </motion.div>
+
+                {/* Live Resolution Stream */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="mb-8"
+                >
+                    <h2 className="text-lg font-bold text-white mb-4 text-center">
+                        📡 Live Resolution Stream
+                    </h2>
+                    <LiveResolutionViewer marketId={marketId} />
                 </motion.div>
 
                 {/* War Room */}
